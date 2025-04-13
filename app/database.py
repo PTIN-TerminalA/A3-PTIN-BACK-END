@@ -4,11 +4,18 @@ from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
 
-# Cargar las variables de entorno desde un archivo .env
+# Cargar las variables de entorno desde el archivo .env
 load_dotenv()
 
-# Cadena de conexión a la base de datos (será configurada en el archivo .env)
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Obtener las credenciales de la base de datos de las variables de entorno
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME")
+
+# Construir la URL de la base de datos usando las variables de entorno
+DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Crear el engine de SQLAlchemy con la URL de la base de datos
 engine = create_engine(DATABASE_URL)
