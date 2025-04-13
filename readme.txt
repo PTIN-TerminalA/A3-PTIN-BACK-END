@@ -21,7 +21,9 @@ En este archivo se pondran las credenciales de la bdd que tengamos que utilizar 
 
 DB_HOST=hostname
 DB_PORT=portnumber
-API_KEY=your_api_key
+DB_USER=root
+DB_PASSWORD=contraseña
+DB_NAME=nombrebdd
 
 Esto se hace asi para no publicar en el repositorio las claves de acceso a la base de datos.
 Obviamente, el archivo .env estará en el .gitignore.
