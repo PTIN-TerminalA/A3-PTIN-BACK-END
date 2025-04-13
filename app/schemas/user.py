@@ -10,7 +10,6 @@ class LoginRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
-    password: str
 
     class Config:
         orm_mode = True
