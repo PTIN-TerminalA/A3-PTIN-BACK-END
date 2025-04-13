@@ -1,0 +1,2 @@
+# Ignoramos el entorno virtual ya que cada maquina tiene que tener el suyo propio
+venv/
