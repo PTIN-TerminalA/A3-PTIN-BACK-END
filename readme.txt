@@ -14,3 +14,14 @@ IMPORTANTE
 
 En el gitignore se especifica que no se tiene que subir el entorno viirtual (la carpeta venv)
 Esto se tiene que dejar como está, ada uno tiene que tener su propio entorno virtual.
+
+
+Es necesario que para que el script database.py todos tengais un archivo con el nombre .env en la raiz del pryecto.
+En este archivo se pondran las credenciales de la bdd que tengamos que utilizar de la siguiente forma:
+
+DB_HOST=hostname
+DB_PORT=portnumber
+API_KEY=your_api_key
+
+Esto se hace asi para no publicar en el repositorio las claves de acceso a la base de datos.
+Obviamente, el archivo .env estará en el .gitignore.
