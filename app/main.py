@@ -12,12 +12,13 @@ app = FastAPI()
 # Inicializar el hasher de contraseñas
 hasher = PasswordHasher()
 
+
 @app.post("/api/register", response_model=UserResponse)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     # Verificar si el email ya está registrado
     existing_user = db.query(User).filter(User.email == request.email).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email ja registrat")
+        raise HTTPException(status_code=400, detail="Email ya registrado")
     
     # Encriptar la contraseña
     hashed_password = hasher.hash(request.password)
@@ -36,7 +37,7 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/regular/register", response_model=RegularCreate)
 async def register_regular(request: RegularCreate, db: Session = Depends(get_db)):
-    # Verificar si el usuario existe (esto debe ser un usuario que ya está registrado en la tabla "user")
+    # Verificar si el usuario existe
     existing_user = db.query(User).filter(User.email == request.email).first()
     if not existing_user:
         raise HTTPException(status_code=404, detail="L'usuari no existeix")
