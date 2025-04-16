@@ -1,12 +1,19 @@
 from pydantic import BaseModel
 from datetime import date
 
-class RegularCreate(BaseModel):
-    email: str
+class RegisterRegularRequest(BaseModel):
+    user_id: int
     name: str
     birth_date: date
-    phone_num: str  # Cambié a 'phone_num' como en tu tabla
+    phone_num: str
+    identity: str
+
+class RegularResponse(BaseModel):
+    id: int
+    name: str
+    birth_date: date
+    phone_num: str
     identity: str
 
     class Config:
-        orm_mode = True  # Esto permite que Pydantic pueda trabajar con SQLAlchemy
+        orm_mode = True
