@@ -7,7 +7,7 @@ from app.schemas.regular import RegisterRegularRequest, RegularResponse
 from app.models.gender import Gender
 from app.models.admin import Admin
 from app.schemas.admin import RegisterAdminRequest, AdminResponse
-from app.services.encryption import encrypt_dni
+from app.services.encryption import hash_dni
 from app.services.token import create_access_token, decode_access_token
 from datetime import timedelta
 from app.database import get_db
@@ -23,9 +23,15 @@ hasher = PasswordHasher()
 @app.post("/api/register", response_model=TokenResponse)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
-    existing_user = db.query(User).filter(User.email == request.email).first()
-    if existing_user:
+    existing_email = db.query(User).filter(User.email == request.email).first()
+    if existing_email:
         raise HTTPException(status_code=400, detail="Email ja enregistrat")
+    
+    existing_dni = db.query(User).filter(User.dni == hash_dni(request.dni)).first()
+
+    if existing_dni:
+        raise HTTPException(status_code=400, detail="DNI ja registrat")
+
     
   
     hashed_password = hasher.hash(request.password)
@@ -33,7 +39,7 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
     new_user = User(
         name=request.name,
-        dni=encrypt_dni(request.dni),
+        dni=hash_dni(request.dni),
         email=request.email, 
         password=hashed_password,
         usertype=request.usertype
@@ -113,4 +119,6 @@ async def get_user_id(token: str):
         return {"user_id": user_id}
     except Exception as e:
         raise HTTPException(status_code=401, detail="Token inválido")
+    
+
 
