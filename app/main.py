@@ -29,7 +29,13 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     hashed_password = hasher.hash(request.password)
 
     # Crear el nuevo usuario
-    new_user = User(email=request.email, password=hashed_password)
+    new_user = User(
+        name=request.name,
+        dni=request.dni,
+        email=request.email, 
+        password=hashed_password,
+        usertype=request.usertype
+        )
 
     # Guardar el usuario en la base de datos
     db.add(new_user)
@@ -61,7 +67,6 @@ async def register_regular(request: RegisterRegularRequest, db: Session = Depend
     # Crear el regular
     new_regular = Regular(
         id=request.user_id,
-        name=request.name,
         birth_date=request.birth_date,
         phone_num=request.phone_num,
         identity=request.identity
