@@ -52,7 +52,7 @@ async def register_regular(request: RegisterRegularRequest, db: Session = Depend
     '''
     user = db.query(User).filter(User.id == request.user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=401, detail="Error")
 
     # Verificar que el identity existe en la tabla gender
     gender = db.query(Gender).filter(Gender.identity == request.identity).first()
