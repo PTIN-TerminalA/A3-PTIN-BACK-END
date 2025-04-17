@@ -7,7 +7,7 @@ from app.schemas.regular import RegisterRegularRequest, RegularResponse
 from app.models.gender import Gender
 from app.models.admin import Admin
 from app.schemas.admin import RegisterAdminRequest, AdminResponse
-
+from app.services.encryption import encrypt_dni
 
 from app.database import get_db
 from argon2 import PasswordHasher
@@ -31,7 +31,7 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     # Crear el nuevo usuario
     new_user = User(
         name=request.name,
-        dni=request.dni,
+        dni=encrypt_dni(request.dni),
         email=request.email, 
         password=hashed_password,
         usertype=request.usertype

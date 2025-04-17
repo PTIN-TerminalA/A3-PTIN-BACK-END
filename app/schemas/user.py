@@ -19,6 +19,7 @@ class UserResponse(BaseModel):
     name: str
     dni: str
     email: str
+    password: str
     usertype: int
 
     class Config:
