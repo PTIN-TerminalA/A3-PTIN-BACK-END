@@ -121,4 +121,3 @@ async def get_user_id(token: str):
         raise HTTPException(status_code=401, detail="Token inválido")
     
 
-
