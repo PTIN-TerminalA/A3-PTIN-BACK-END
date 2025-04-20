@@ -1,5 +1,6 @@
 from app.mongodb import connect_mongo
 
+
 async def crear_reserva(data):
     db = await connect_mongo()
     # Guardar los datos de la reserva en la colección 'route'
