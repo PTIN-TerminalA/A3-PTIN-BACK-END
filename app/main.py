@@ -1,6 +1,16 @@
+# app/main.py
+
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from app.schemas.user import LoginRequest, UserResponse, RegisterRequest, TokenResponse
+from datetime import timedelta
+from argon2 import PasswordHasher
+from bson import ObjectId
+
+# --- SQL imports ---
+from app.database import get_db
+from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -9,125 +19,123 @@ from app.models.admin import Admin
 from app.schemas.admin import RegisterAdminRequest, AdminResponse
 from app.services.encryption import hash_dni
 from app.services.token import create_access_token, decode_access_token
-from datetime import timedelta
-from app.database import get_db
-from argon2 import PasswordHasher
-from fastapi import HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+
+# --- Mongo imports ---
+from app.mongodb import get_db as get_mongo_db
+from app.reserves.router import Route
 
 app = FastAPI()
 
+# 🔓 CORS (permitir React en :5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], 
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-
+# seguridad bearer para extraer token
+bearer_scheme = HTTPBearer()
 hasher = PasswordHasher()
 
+def serialize_mongo_doc(doc: dict) -> dict:
+    out = {}
+    for k, v in doc.items():
+        if isinstance(v, ObjectId):
+            out[k] = str(v)
+        elif isinstance(v, dict):
+            out[k] = serialize_mongo_doc(v)
+        elif isinstance(v, list):
+            out[k] = [
+                str(item) if isinstance(item, ObjectId)
+                else serialize_mongo_doc(item) if isinstance(item, dict)
+                else item
+                for item in v
+            ]
+        else:
+            out[k] = v
+    return out
+
+# --- SQL endpoints ---
 
 @app.post("/api/register", response_model=TokenResponse)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
-
-    existing_email = db.query(User).filter(User.email == request.email).first()
-    if existing_email:
-        raise HTTPException(status_code=400, detail="Email ja enregistrat")
-    
-    existing_dni = db.query(User).filter(User.dni == hash_dni(request.dni)).first()
-
-    if existing_dni:
-        raise HTTPException(status_code=400, detail="DNI ja registrat")
-
-    
-  
-    hashed_password = hasher.hash(request.password)
-
-
+    if db.query(User).filter(User.email == request.email).first():
+        raise HTTPException(400, "Email ja enregistrat")
+    if db.query(User).filter(User.dni == hash_dni(request.dni)).first():
+        raise HTTPException(400, "DNI ja registrat")
     new_user = User(
         name=request.name,
         dni=hash_dni(request.dni),
-        email=request.email, 
-        password=hashed_password,
+        email=request.email,
+        password=hasher.hash(request.password),
         usertype=request.usertype
-        )
-
-
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    access_token = create_access_token(data={"sub": new_user.id})
-
-
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
+    )
+    db.add(new_user); db.commit(); db.refresh(new_user)
+    token = create_access_token(data={"sub": new_user.id})
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/api/register-regular", response_model=RegularResponse)
 async def register_regular(request: RegisterRegularRequest, db: Session = Depends(get_db)):
-
-    # Crear el regular
-    new_regular = Regular(
+    new = Regular(
         id=request.user_id,
         birth_date=request.birth_date,
         phone_num=request.phone_num,
         identity=request.identity
     )
-
-    db.add(new_regular)
-    db.commit()
-    db.refresh(new_regular)
-
-    return new_regular
-
+    db.add(new); db.commit(); db.refresh(new)
+    return new
 
 @app.post("/api/register-admin", response_model=AdminResponse)
-async def register_regular(request: RegisterAdminRequest, db: Session = Depends(get_db)):
-    new_admin = Admin(
-        id = request.user_id,
-        superadmin = request.superadmin
-    )
-
-    db.add(new_admin)
-    db.commit()
-    db.refresh(new_admin)
-
-    return new_admin
-
-
+async def register_admin(request: RegisterAdminRequest, db: Session = Depends(get_db)):
+    new = Admin(id=request.user_id, superadmin=request.superadmin)
+    db.add(new); db.commit(); db.refresh(new)
+    return new
 
 @app.post("/api/login", response_model=TokenResponse)
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
-
     user = db.query(User).filter(User.email == request.email).first()
-    
     if not user:
-        raise HTTPException(status_code=404, detail="Usuari no trobat")
-
+        raise HTTPException(404, "Usuari no trobat")
     try:
-        hasher.verify(user.password, request.password) 
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Contrassenya incorrecta")
-    
-    access_token = create_access_token(data={"sub": user.id})
-
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-
-
+        hasher.verify(user.password, request.password)
+    except:
+        raise HTTPException(401, "Contrassenya incorrecta")
+    token = create_access_token(data={"sub": user.id})
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.get("/api/get_user_id")
 async def get_user_id(token: str):
-    try:
-        payload = decode_access_token(token)
-        user_id = int(payload.get("sub"))
-        return {"user_id": user_id}
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Token inválido")
-    
+    payload = decode_access_token(token)
+    return {"user_id": int(payload.get("sub"))}
 
+# --- Mongo endpoints ---
+
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to the API amb SQL i Mongo!"}
+
+@app.post("/reserves/programada")
+async def create_route(
+    route: Route,
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    # extraer user_id del token
+    payload = decode_access_token(creds.credentials)
+    user_id = payload.get("sub")
+    # buscar coche disponible
+    car = await db["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(400, "No hi ha cotxes disponibles ara mateix.")
+    # reservar coche
+    await db["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Ocupat"}})
+    doc = route.dict()
+    doc["car_id"] = car["_id"]
+    doc["user_id"] = user_id
+    result = await db["route"].insert_one(doc)
+    inserted = await db["route"].find_one({"_id": result.inserted_id})
+    if not inserted:
+        raise HTTPException(500, "No s'ha pogut recuperar la reserva")
+    return {"message": "Reserva confirmada amb èxit!", "data": serialize_mongo_doc(inserted)}
