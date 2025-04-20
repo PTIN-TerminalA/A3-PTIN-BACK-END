@@ -1,12 +1,18 @@
-# test_insert_cars.py
+# app/test_insert_cars.py
 
-from app.mongodb import get_db
-from reserves.crud import create_initial_cars
+import asyncio
+from app.mongodb import connect_mongo
 
-def main():
-    car_collection = db["car"]
-    create_initial_cars(car_collection)
-    print("🚗 Flota de coches inicial insertada (si no existía).")
+async def main():
+    db = await connect_mongo()
+    # Prepara los 10 coches
+    cars = [
+        {"_id": f"C{i}", "state": "Disponible", "battery": 100.0}
+        for i in range(10)
+    ]
+    # Inserta muchos documentos a la vez
+    result = await db["car"].insert_many(cars)
+    print("Inserted car IDs:", result.inserted_ids)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

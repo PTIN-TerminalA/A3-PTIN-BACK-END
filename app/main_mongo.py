@@ -1,12 +1,11 @@
-# app/main_mongo.py
-
 import asyncio
 from bson import ObjectId
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.mongodb import get_db
-from app.reserves.router import Route
+from app.reserves.router import Route  # importa desde router.py si ahí tienes el modelo, si no desde schemas
+# Si el modelo Route está en schemas directamente, usa: from app.reserves.schemas import Route
 
 app = FastAPI()
 
@@ -43,12 +42,28 @@ async def read_root():
 
 @app.post("/reserves/programada")
 async def create_route(route: Route, db=Depends(get_db)):
-    # convertimos todo el Pydantic model a dict
+    # Buscar el primer coche disponible
+    car = await db["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(status_code=400, detail="No hi ha cotxes disponibles ara mateix.")
+
+    # Marcar el coche como Ocupat
+    await db["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Ocupat"}}
+    )
+
+    # Añadir el car_id a la reserva
     doc = route.dict()
+    doc["car_id"] = car["_id"]
+
+    # Insertar reserva
     result = await db["route"].insert_one(doc)
     inserted = await db["route"].find_one({"_id": result.inserted_id})
+
     if not inserted:
         raise HTTPException(status_code=500, detail="No s'ha pogut recuperar la reserva")
+
     salida = serialize_mongo_doc(inserted)
     return {
         "message": "Reserva confirmada amb èxit!",
