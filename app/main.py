@@ -1,12 +1,14 @@
 # app/main.py
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from argon2 import PasswordHasher
 from bson import ObjectId
+from fastapi import Path
+
 
 # --- SQL imports ---
 from app.database import get_db
@@ -116,20 +118,28 @@ async def get_user_id(token: str):
 async def read_root():
     return {"message": "Welcome to the API amb SQL i Mongo!"}
 
+@app.get("/reserves")
+async def list_reserves(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    # opcional: validar token
+    decode_access_token(creds.credentials)
+    cursor = db["route"].find()
+    reserves = [serialize_mongo_doc(doc) async for doc in cursor]
+    return {"reserves": reserves}
+
 @app.post("/reserves/programada")
 async def create_route(
     route: Route,
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db=Depends(get_mongo_db)
 ):
-    # extraer user_id del token
     payload = decode_access_token(creds.credentials)
     user_id = payload.get("sub")
-    # buscar coche disponible
     car = await db["car"].find_one({"state": "Disponible"})
     if not car:
         raise HTTPException(400, "No hi ha cotxes disponibles ara mateix.")
-    # reservar coche
     await db["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Ocupat"}})
     doc = route.dict()
     doc["car_id"] = car["_id"]
@@ -139,3 +149,26 @@ async def create_route(
     if not inserted:
         raise HTTPException(500, "No s'ha pogut recuperar la reserva")
     return {"message": "Reserva confirmada amb èxit!", "data": serialize_mongo_doc(inserted)}
+
+
+
+
+@app.delete("/reserves/{reserve_id}")
+async def delete_reserve(
+    reserve_id: str = Path(..., description="ID de la reserva a eliminar"),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    decode_access_token(creds.credentials)  # validem el token
+    result = await db["route"].delete_one({"_id": ObjectId(reserve_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(404, detail="Reserva no trobada")
+    return {"message": "Reserva eliminada correctament"}
+
+
+@app.get("/check-user")
+async def check_user(email: str = Query(...), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User exists"}
