@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
-from app.schemas.user import LoginRequest, UserResponse, RegisterRequest, TokenResponse, UserProfileResponse
+from app.schemas.user import LoginRequest, UserResponse, RegisterRequest, TokenResponse
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -121,20 +121,4 @@ async def get_user_id(token: str):
         raise HTTPException(status_code=401, detail="Token inválido")
     
 
-@app.get("/api/profile", response_model=UserProfileResponse)
-async def get_user_profile(token: str, db: Session = Depends(get_db)):
-    try:
-        payload = decode_access_token(token)
-        user_id = int(payload.get("sub"))
-    except:
-        raise HTTPException(status_code=401, detail="Token invàlid")
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuari no trobat")
-
-    return {
-        "name": user.name,
-        "email": user.email,
-        "phone_num": user.phone_num
-    }
