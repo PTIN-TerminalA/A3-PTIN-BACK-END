@@ -19,7 +19,7 @@ from app.schemas.regular import RegisterRegularRequest, RegularResponse
 from app.models.gender import Gender
 from app.models.admin import Admin
 from app.schemas.admin import RegisterAdminRequest, AdminResponse
-from app.services.encryption import hash_dni
+from app.services.encryption import encrypt_dni, decrypt_dni 
 from app.services.token import create_access_token, decode_access_token
 
 # --- Mongo imports ---
@@ -65,11 +65,9 @@ def serialize_mongo_doc(doc: dict) -> dict:
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == request.email).first():
         raise HTTPException(400, "Email ja enregistrat")
-    if db.query(User).filter(User.dni == hash_dni(request.dni)).first():
-        raise HTTPException(400, "DNI ja registrat")
     new_user = User(
         name=request.name,
-        dni=hash_dni(request.dni),
+        dni=encrypt_dni(request.dni),
         email=request.email,
         password=hasher.hash(request.password),
         usertype=request.usertype
