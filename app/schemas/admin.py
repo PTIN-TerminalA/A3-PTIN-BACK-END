@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 # Este es el schema para la solicitud de creación de admin
 class RegisterAdminRequest(BaseModel):
-    user_id: int  # El id del usuario que será admin
+    token: str  # El id del usuario que será admin
     superadmin: bool  # Si es superadmin o admin normal
 
     class Config:

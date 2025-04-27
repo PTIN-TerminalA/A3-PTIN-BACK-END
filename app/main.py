@@ -78,8 +78,9 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/register-regular", response_model=RegularResponse)
 async def register_regular(request: RegisterRegularRequest, db: Session = Depends(get_db)):
+    userid = decode_access_token(request.token)
     new = Regular(
-        id=request.user_id,
+        id=int(userid.get("sub")),
         birth_date=request.birth_date,
         phone_num=request.phone_num,
         identity=request.identity
@@ -89,7 +90,11 @@ async def register_regular(request: RegisterRegularRequest, db: Session = Depend
 
 @app.post("/api/register-admin", response_model=AdminResponse)
 async def register_admin(request: RegisterAdminRequest, db: Session = Depends(get_db)):
-    new = Admin(id=request.user_id, superadmin=request.superadmin)
+    userid = decode_access_token(request.token)
+    new = Admin(
+        id=int(userid.get("sub")), 
+        superadmin=request.superadmin
+    )
     db.add(new); db.commit(); db.refresh(new)
     return new
 

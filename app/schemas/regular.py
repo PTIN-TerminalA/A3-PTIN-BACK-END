@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from datetime import date
 
 class RegisterRegularRequest(BaseModel):
-    user_id: int
+    token: str
     birth_date: date
     phone_num: str
     identity: str
