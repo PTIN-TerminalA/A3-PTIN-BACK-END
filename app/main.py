@@ -59,12 +59,25 @@ def serialize_mongo_doc(doc: dict) -> dict:
             out[k] = v
     return out
 
+
+# document with 10.000 passwords that shouldn't be used
+
+def load_common_passwords(file_path="app/commonPasswords.txt"):
+    with open(file_path, "r") as file:
+        return set(password.strip() for password in file.readlines())
+
 # --- SQL endpoints ---
 
 @app.post("/api/register", response_model=TokenResponse)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == request.email).first():
-        raise HTTPException(400, "Email ja enregistrat")
+        raise HTTPException(400, "Email ja enregistrat.")
+    
+    common_passwords = load_common_passwords()
+    
+    if request.password in common_passwords:
+        raise HTTPException(400, "La contrasenya es massa comú, si us plau, empra una altra.")
+
     new_user = User(
         name=request.name,
         dni=encrypt_dni(request.dni),
