@@ -3,7 +3,6 @@ anyio==4.9.0
 argon2==0.1.10
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
-bson==0.5.10
 cffi==1.17.1
 click==8.1.8
 cryptography==44.0.2
@@ -20,7 +19,6 @@ pydantic==2.11.3
 pydantic_core==2.33.1
 pymongo==4.12.0
 PyMySQL==1.1.1
-python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
 python-jose==3.4.0
 rsa==4.9.1

@@ -1,6 +1,6 @@
 # app/main.py
 
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -8,11 +8,12 @@ from datetime import timedelta
 from argon2 import PasswordHasher
 from bson import ObjectId
 from fastapi import Path
+from datetime import datetime
 
 
 # --- SQL imports ---
 from app.database import get_db
-from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse
+from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -134,37 +135,203 @@ async def get_user_id(token: str):
 async def read_root():
     return {"message": "Welcome to the API amb SQL i Mongo!"}
 
+# --- GET /reserves ---
 @app.get("/reserves")
 async def list_reserves(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db=Depends(get_mongo_db)
+    db_mongo = Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db),
+    user_email: str = Query(None),
+    start_location: str = Query(None),
+    end_location: str = Query(None),
+    state: str = Query(None),
+    start_date: str = Query(None),
+    end_date: str = Query(None),
 ):
-    # opcional: validar token
     decode_access_token(creds.credentials)
-    cursor = db["route"].find()
-    reserves = [serialize_mongo_doc(doc) async for doc in cursor]
-    return {"reserves": reserves}
 
-@app.post("/reserves/programada")
-async def create_route(
+    # Filtrar por user_email -> user_ids
+    user_ids = None
+    if user_email:
+        user = db_sql.query(User).filter(User.email == user_email).first()
+        if not user:
+            return {"reserves": []}
+        user_ids = [user.id]
+
+    # Construir filtro de Mongo
+    filt = {}
+    if user_ids is not None:
+        filt["user_id"] = {"$in": user_ids}
+    if start_location:
+        filt["start_location"] = start_location
+    if end_location:
+        filt["end_location"] = end_location
+    if state:
+        filt["state"] = state
+    if start_date or end_date:
+        rng = {}
+        if start_date: rng["$gte"] = start_date
+        if end_date:   rng["$lte"] = end_date
+        filt["scheduled_time"] = rng
+
+    cursor = db_mongo["route"].find(filt)
+    routes = [serialize_mongo_doc(doc) async for doc in cursor]
+
+    # Añadir email a cada reserva
+    for r in routes:
+        usr = db_sql.query(User).filter(User.id == int(r["user_id"])).first()
+        r["user_email"] = usr.email if usr else None
+
+    return {"reserves": routes}
+
+# POST /reserves/usuari  (reservacotxe)
+@app.post("/reserves/usuari")
+async def create_route_user(
     route: Route,
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db=Depends(get_mongo_db)
 ):
+    # 1) Obtener user_id desde token
     payload = decode_access_token(creds.credentials)
-    user_id = payload.get("sub")
+    user_id = int(payload.get("sub"))
+
+    # 2) Buscar coche disponible y marcarlo ocupado
     car = await db["car"].find_one({"state": "Disponible"})
     if not car:
         raise HTTPException(400, "No hi ha cotxes disponibles ara mateix.")
-    await db["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Ocupat"}})
-    doc = route.dict()
-    doc["car_id"] = car["_id"]
-    doc["user_id"] = user_id
+    await db["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Ocupat"}}
+    )
+
+    # 3) Convertir scheduled_time a datetime si viene como string
+    sched = route.scheduled_time
+    if isinstance(sched, str):
+        try:
+            sched = datetime.fromisoformat(sched)
+        except ValueError:
+            raise HTTPException(400, "scheduled_time ha de ser ISODate o ISO string")
+
+    # 4) Construir documento en orden fijo
+    doc = {
+        "user_id":        user_id,
+        "start_location": route.start_location,
+        "end_location":   route.end_location,
+        "scheduled_time": sched,
+        "state":          route.state,
+        "car_id":         car["_id"]
+    }
+
+    # 5) Insertar en la colección `route`
     result = await db["route"].insert_one(doc)
     inserted = await db["route"].find_one({"_id": result.inserted_id})
     if not inserted:
         raise HTTPException(500, "No s'ha pogut recuperar la reserva")
+
+    # 6) Upsert en la colección `user` para mantener el historial
+    await db["user"].update_one(
+        {"id": user_id},
+        {
+            "$push":      {"route_history": inserted},
+            "$setOnInsert": {"id": user_id}
+        },
+        upsert=True
+    )
+
     return {"message": "Reserva confirmada amb èxit!", "data": serialize_mongo_doc(inserted)}
+
+
+# --- POST /reserves/programada (gestioReserves) ---
+@app.post("/reserves/programada")
+async def create_route_admin(
+    payload: dict = Body(...),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db_mongo = Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db)
+):
+    # 1) Validar y decodificar token
+    decode_access_token(creds.credentials)
+
+    # 2) Resolver user_id a partir de user_email
+    email = payload.get("user_email")
+    if not email:
+        raise HTTPException(400, "Cal el camp user_email")
+    user = db_sql.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(404, "Usuari no trobat")
+    user_id = user.id
+
+    # 3) Buscar coche disponible y marcarlo
+    car = await db_mongo["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(400, "No hi ha cotxes disponibles")
+    await db_mongo["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Ocupat"}}
+    )
+
+    # 4) Convertir scheduled_time a datetime
+    sched_str = payload.get("scheduled_time")
+    try:
+        sched = datetime.fromisoformat(sched_str)
+    except Exception:
+        raise HTTPException(400, "scheduled_time ha de ser ISODate o ISO string")
+
+    # 5) Construir documento en orden fijo
+    doc = {
+        "user_id":        user_id,
+        "start_location": payload["start_location"],
+        "end_location":   payload["end_location"],
+        "scheduled_time": sched,
+        "state":          payload.get("state", "Programada"),
+        "car_id":         car["_id"]
+    }
+
+    # 6) Insertar en la colección `route`
+    result = await db_mongo["route"].insert_one(doc)
+    inserted = await db_mongo["route"].find_one({"_id": result.inserted_id})
+    if not inserted:
+        raise HTTPException(500, "No s'ha pogut recuperar la reserva")
+
+    # 7) Upsert en la colección `user` para historial
+    await db_mongo["user"].update_one(
+        {"id": user_id},
+        {
+            "$push":      {"route_history": inserted},
+            "$setOnInsert": {"id": user_id}
+        },
+        upsert=True
+    )
+
+    out = serialize_mongo_doc(inserted)
+    out["user_email"] = email
+    return {"reserves": out}
+
+# --- PATCH /reserves/{reserve_id} ---
+@app.patch("/reserves/{reserve_id}")
+async def update_route(
+    reserve_id: str = Path(...),
+    payload: dict = Body(...),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db_mongo = Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db)
+):
+    decode_access_token(creds.credentials)
+
+    # No permitimos cambiar user_email en update
+    if "user_email" in payload:
+        payload.pop("user_email")
+
+    # Si quieren reasignar usuario, podrían pasar user_email, pero omitimos
+
+    # Ejecutar update
+    res = await db_mongo["route"].update_one(
+        {"_id": ObjectId(reserve_id)},
+        {"$set": payload}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Reserva no trobada")
+    return {"message": "Reserva actualitzada"}
 
 
 
@@ -188,3 +355,59 @@ async def check_user(email: str = Query(...), db: Session = Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "User exists"}
+
+
+@app.get("/api/profile")
+async def get_profile(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Devuelve el perfil completo del usuario: 
+    name, email (tabla User) 
+    + birth_date, phone_num, identity (tabla Regular).
+    """
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    # 1) Datos de User
+    user: User = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "Usuari no trobat")
+
+    # 2) Datos de Regular
+    regular: Regular = db.query(Regular).filter(Regular.id == user_id).first()
+    if not regular:
+        raise HTTPException(404, "Dades regular no trobades")
+
+    return {
+        "name": user.name,
+        "email": user.email,
+        "birth_date": regular.birth_date.isoformat(),
+        "phone_num": regular.phone_num,
+        "identity": regular.identity
+    }
+
+@app.patch("/api/profile", response_model=dict)
+async def update_profile(
+    update: ProfileUpdateRequest,
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "Usuari no trobat")
+    user.name = update.name
+
+    regular = db.query(Regular).filter(Regular.id == user_id).first()
+    if not regular:
+        raise HTTPException(404, "Dades de perfil no trobades")
+    regular.birth_date = update.birth_date
+    regular.phone_num  = update.phone_num
+    regular.identity   = update.identity
+
+    db.commit()
+    return {"message": "Perfil actualitzat correctament"}
