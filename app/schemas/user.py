@@ -37,6 +37,11 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str
 
+class TokenResponseGoogle(BaseModel):
+    access_token: str
+    token_type: str
+    needs_regular: bool
+
 class ProfileUpdateRequest(BaseModel):
     name: constr(min_length=1)
     birth_date: date

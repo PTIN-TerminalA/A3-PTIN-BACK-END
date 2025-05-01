@@ -13,7 +13,7 @@ from datetime import datetime
 
 # --- SQL imports ---
 from app.database import get_db
-from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest
+from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest, TokenResponseGoogle
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -128,6 +128,46 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
 async def get_user_id(token: str):
     payload = decode_access_token(token)
     return {"user_id": int(payload.get("sub"))}
+
+
+
+
+@app.post("/api/register-login-google", response_model=TokenResponseGoogle)
+async def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if user:
+        # Si l'usuari ja ha estat registrat amb el seu email, retornem el seu id en un token
+        token = create_access_token(data={"sub": user.id})
+        print("No needed")
+        return {"access_token": token, 
+                "token_type": "bearer",
+                "needs_regular": False
+        }
+
+    new_user = User(
+        name=request.name,
+        dni=encrypt_dni(request.dni),
+        email=request.email,
+        password=hasher.hash(request.password),
+        usertype=request.usertype
+    )
+    db.add(new_user); db.commit(); db.refresh(new_user)
+    token = create_access_token(data={"sub": new_user.id})
+    print("needed")
+    return {"access_token": token, 
+            "token_type": "bearer",
+            "needs_regular": True
+    }
+
+
+
+
+
+
+
+
 
 # --- Mongo endpoints ---
 
@@ -411,3 +451,4 @@ async def update_profile(
 
     db.commit()
     return {"message": "Perfil actualitzat correctament"}
+
