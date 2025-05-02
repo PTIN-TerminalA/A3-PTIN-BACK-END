@@ -13,7 +13,7 @@ from datetime import datetime
 
 # --- SQL imports ---
 from app.database import get_db
-from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest, TokenResponseGoogle
+from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest, TokenResponseGoogle, UpdateDniRequest
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -136,15 +136,23 @@ async def get_user_id(token: str):
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     
     user = db.query(User).filter(User.email == request.email).first()
-
     if user:
         # Si l'usuari ja ha estat registrat amb el seu email, retornem el seu id en un token
+
+        regular = db.query(Regular).filter(Regular.id == user.id).first()
+
         token = create_access_token(data={"sub": user.id})
-        print("No needed")
-        return {"access_token": token, 
-                "token_type": "bearer",
-                "needs_regular": False
-        }
+        if regular:
+            return {"access_token": token, 
+                    "token_type": "bearer",
+                    "needs_regular": False
+            }
+        
+        if not regular:
+            return {"access_token": token, 
+                    "token_type": "bearer",
+                    "needs_regular": True
+            }
 
     new_user = User(
         name=request.name,
@@ -154,14 +162,29 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         usertype=request.usertype
     )
     db.add(new_user); db.commit(); db.refresh(new_user)
+
     token = create_access_token(data={"sub": new_user.id})
-    print("needed")
+
     return {"access_token": token, 
             "token_type": "bearer",
             "needs_regular": True
     }
 
 
+@app.post("/api/update-dni")
+async def update_dni(request: UpdateDniRequest, db: Session = Depends(get_db)):
+    decoded = decode_access_token(request.access_token)
+    user_id = decoded["sub"]
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuari no trobat")
+
+    user.dni = encrypt_dni(request.dni)
+    db.commit(); db.refresh(user)
+
+    return {"message": "DNI actualitzat correctament"}
 
 
 

@@ -42,6 +42,10 @@ class TokenResponseGoogle(BaseModel):
     token_type: str
     needs_regular: bool
 
+class UpdateDniRequest(BaseModel):
+    access_token: str
+    dni: str
+
 class ProfileUpdateRequest(BaseModel):
     name: constr(min_length=1)
     birth_date: date
