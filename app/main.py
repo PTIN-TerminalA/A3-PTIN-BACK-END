@@ -29,6 +29,12 @@ from app.reserves.router import Route
 
 app = FastAPI()
 
+#from app.vehicles import router as vehicle_router
+#app.include_router(vehicle_router)
+
+
+
+
 # 🔓 CORS (permitir React en :5173)
 app.add_middleware(
     CORSMiddleware,
@@ -474,4 +480,10 @@ async def update_profile(
 
     db.commit()
     return {"message": "Perfil actualitzat correctament"}
+
+
+
+
+from app.vehicles.router import router as vehicle_router
+app.include_router(vehicle_router)
 
