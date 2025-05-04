@@ -25,3 +25,16 @@ jobs:
           context: .
           push: true
           tags: artuaragon/via-project-a-backend:latest
+
+      - name: Deploy to Remote Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: 192.168.10.10
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            docker pull artuaragon/via-project-a-frontend:latest
+            docker stop via-frontend || true
+            docker rm via-frontend || true
+            docker run -d --name via-frontend -p 80:3000 artuaragon/via-project-a-frontend:latest
+
