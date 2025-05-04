@@ -28,4 +28,4 @@ DB_NAME=nombrebdd
 Esto se hace asi para no publicar en el repositorio las claves de acceso a la base de datos.
 Obviamente, el archivo .env estará en el .gitignore.
 
-Prueba 2
+Prueba 3
