@@ -3,6 +3,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import requests
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from argon2 import PasswordHasher
@@ -481,7 +482,38 @@ async def update_profile(
     db.commit()
     return {"message": "Perfil actualitzat correctament"}
 
+# --- Peticion ruta ---
+# Primero cogemos la posicion de los establecimientos de la base de datos
+# luego se hace la peticion a la API externa y se devuelve el resultado
 
+# Peticion para obtener la posicion de los establecimientos
+
+
+# Peticion a la API externa
+@app.post("/api/shortest-path")
+async def get_shortest_path(payload: dict = Body(...)):
+    """
+    Endpoint para calcular el camino más corto entre dos puntos.
+    """
+    try:
+        # Realizar la petición a la API externa
+        response = requests.post(
+            "http://127.0.0.1:9000/path",
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        # Manejar la respuesta de la API externa
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 400:
+            raise HTTPException(status_code=400, detail="Bad Request: Puntos fuera de los límites o no transitables.")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Not Found: No se encontró un camino entre los puntos especificados.")
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Error desconocido en la API externa.")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error al conectar con la API externa: {str(e)}")
 
 
 from app.vehicles.router import router as vehicle_router
