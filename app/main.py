@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from argon2 import PasswordHasher
@@ -487,7 +488,40 @@ async def update_profile(
 # luego se hace la peticion a la API externa y se devuelve el resultado
 
 # Peticion para obtener la posicion de los establecimientos
+@app.get("/api/establishment-position")
+async def get_establishment_position(
+    name: str = Query(..., description="Nombre del establecimiento"),
+    #creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener la posición de un establecimiento por su nombre.
+    Devuelve las coordenadas (location_x, location_y).
+    """
+    # Validar el token del usuario
+    #decode_access_token(creds.credentials)
 
+    print(f"Buscando establecimiento con nombre: {name}")
+
+    # Consultar la base de datos para obtener las coordenadas del establecimiento
+    establishment = db.execute(
+        text("SELECT location_x, location_y FROM service WHERE name = :name"),
+        {"name": name}
+    ).fetchone()
+
+    print(f"Resultado de la consulta: {establishment}")
+
+    if not establishment:
+        print("Establecimiento no encontrado")
+        raise HTTPException(status_code=404, detail="Establecimiento no encontrado")
+
+    print(f"Coordenadas encontradas: location_x={establishment[0]}, location_y={establishment[1]}")
+
+    return {
+        "name": name,
+        "location_x": establishment[0],
+        "location_y": establishment[1]
+    }
 
 # Peticion a la API externa
 @app.post("/api/shortest-path")
