@@ -62,3 +62,10 @@ class ProfileUpdateRequest(BaseModel):
                 "identity": "male"
             }
         }
+    
+class UserTypeRequest(BaseModel):
+    token: str
+
+class UserTypeResponse(BaseModel):
+    usertype: int
+

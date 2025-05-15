@@ -13,7 +13,7 @@ from datetime import datetime
 
 # --- SQL imports ---
 from app.database import get_db
-from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest, TokenResponseGoogle, UpdateDniRequest
+from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest, TokenResponseGoogle, UpdateDniRequest, UserTypeRequest, UserTypeResponse
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -193,6 +193,21 @@ async def update_dni(request: UpdateDniRequest, db: Session = Depends(get_db)):
 
     return {"message": "DNI actualitzat correctament"}
 
+
+@app.get("/api/get-user-type")
+async def get_user_type(token: str, db: Session = Depends(get_db)):
+    decoded = decode_access_token(token)
+    user_id = decoded["sub"]
+
+    regular = db.query(Regular).filter(Regular.id == user_id).first()
+    admin = db.query(Admin).filter(Admin.id == user_id).first()
+
+    if regular: 
+        return {"user_type": str("regular")}
+    elif admin:   
+        return {"user_type": str("admin")}
+    else:
+        return {"user_type": str("non-assigned")}
 
 
 
