@@ -146,9 +146,10 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         # Si l'usuari ja ha estat registrat amb el seu email, retornem el seu id en un token
 
         regular = db.query(Regular).filter(Regular.id == user.id).first()
+        admin = db.query(Admin).filter(Admin.id == user.id).first()
 
         token = create_access_token(data={"sub": user.id})
-        if regular:
+        if regular or admin:
             return {"access_token": token, 
                     "token_type": "bearer",
                     "needs_regular": False
