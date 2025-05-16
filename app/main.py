@@ -207,11 +207,16 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
 
     regular = db.query(Regular).filter(Regular.id == user_id).first()
     admin = db.query(Admin).filter(Admin.id == user_id).first()
+    
 
-    if regular: 
+    if admin: 
+        superadmin = db.query(Admin).filter(Admin.id == user_id, Admin.superadmin == True).first()
+        if superadmin:
+            return {"user_type": str("superadmin")}
+        else:
+            return {"user_type": str("admin")}
+    elif regular:   
         return {"user_type": str("regular")}
-    elif admin:   
-        return {"user_type": str("admin")}
     else:
         return {"user_type": str("non-assigned")}
 
