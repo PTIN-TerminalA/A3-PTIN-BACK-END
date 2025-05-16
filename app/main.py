@@ -24,8 +24,8 @@ from app.models.admin import Admin
 from app.schemas.admin import RegisterAdminRequest, AdminResponse
 from app.services.encryption import encrypt_dni, decrypt_dni 
 from app.services.token import create_access_token, decode_access_token
-from app.models.service import Service
-from app.schemas.service import ServiceSchema
+from app.models.service import Service, Price, Schedule, Valoration, Tag, ServiceTag
+from app.schemas.service import ServiceSchema, PriceSchema, ScheduleSchema, ServiceTagSchema
 from app.schemas.location import LocationSchema, WifiMeasuresList
 
 
@@ -216,10 +216,61 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
         return {"user_type": str("non-assigned")}
 
 
+#Aquest endpoint ens reotrna la llista de serveis disponibles
 @app.get("/api/getServices",response_model=List[ServiceSchema])
 async def getServices(db: Session = Depends(get_db)):
     services = db.query(Service).all()
+
     return services
+
+
+#Aquest endpoint ens retorna la llista de preus disponibles pels serveis
+@app.get("/api/getPrices",response_model=List[PriceSchema])
+async def getPrices(db: Session = Depends(get_db)):
+    prices = db.query(Price).all()
+
+    return prices
+
+#Donat l'ID d'un servei concret, aquest endpoint ens retorna els schedules disponibles
+@app.post("/api/getSchedules", response_model=List[ScheduleSchema])
+async def getSchedules(service_id: int, db: Session = Depends(get_db)):
+    schedules = db.query(Schedule).filter(Schedule.service_id == service_id).all()
+    if not schedules:
+        raise HTTPException(status_code=404, detail="No s'han trobat horaris per aquest servei")
+    return schedules
+
+
+#Aquest endpoint ens retorna la llista de tags disponibles
+@app.get("/api/getTags")
+async def getTags(db: Session = Depends(get_db)):
+    tags = db.query(Tag).all()
+    if not tags:
+        raise HTTPException(status_code=404, detail="No s'han trobat tags")
+    return tags
+
+
+#Aquest endpoint ens retorna el tag d'un servei concret donat el seu ID
+@app.post("/api/getServiceTag")
+async def getServiceTag(service_id: int, db: Session = Depends(get_db)):
+    service = db.query(Service).filter(Service.id == service_id).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Servei no trobat")
+    tag = db.query(ServiceTag).filter(ServiceTag.service_id == service_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag no trobat")
+    return tag
+
+
+#Aquest endpoint ens retorna les valoracions d'un servei concret donat el seu ID
+@app.post("/api/getValoration")
+async def getValoration(service_id: int, db: Session = Depends(get_db)):
+    valoration = db.query(Valoration).filter(Valoration.service_id == service_id).all()
+    if not valoration:
+        raise HTTPException(status_code=404, detail="Valoracions no trobades")
+    return valoration
+
+
+
 
 @app.post("/api/getUserPosition")
 async def getUserPosition(payload: WifiMeasuresList):
