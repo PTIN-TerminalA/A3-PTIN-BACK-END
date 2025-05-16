@@ -9,6 +9,7 @@ from argon2 import PasswordHasher
 from bson import ObjectId
 from fastapi import Path
 from datetime import datetime
+from typing import List
 
 
 # --- SQL imports ---
@@ -22,6 +23,9 @@ from app.models.admin import Admin
 from app.schemas.admin import RegisterAdminRequest, AdminResponse
 from app.services.encryption import encrypt_dni, decrypt_dni 
 from app.services.token import create_access_token, decode_access_token
+from app.models.service import Service
+from app.schemas.service import ServiceSchema
+
 
 # --- Mongo imports ---
 from app.mongodb import get_db as get_mongo_db
@@ -210,11 +214,14 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
         return {"user_type": str("non-assigned")}
 
 
+@app.get("/api/getServices",response_model=List[ServiceSchema])
+async def getServices(db: Session = Depends(get_db)):
+    services = db.query(Service).all()
+    return services
 
 
 
-
-# --- Mongo endpoints ---
+# ------------------------------------ Mongo endpoints ------------------------------------------
 
 @app.get("/")
 async def read_root():
@@ -502,4 +509,10 @@ async def update_profile(
 
 from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
+
+
+
+
+
+#-------------------------Endpoints localizacion e IA-----------------------------------
 
