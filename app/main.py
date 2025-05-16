@@ -487,7 +487,9 @@ async def update_profile(
 # Primero cogemos la posicion de los establecimientos de la base de datos
 # luego se hace la peticion a la API externa y se devuelve el resultado
 
-# Peticion para obtener la posicion de los establecimientos
+# Peticion para obtener la posicion del establecimiento pasado por parametro 
+# Uso: /api/establishment-position?name="nombredelestablecimiento"
+# Devuelve: {name: "nombredelestablecimiento", location_x: 0.5, location_y: 0.5}
 @app.get("/api/establishment-position")
 async def get_establishment_position(
     name: str = Query(..., description="Nombre del establecimiento"),
@@ -529,6 +531,33 @@ async def get_establishment_position(
         raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
 
 # Peticion a la API externa
+# (En caso de no estar listo el controller, se puede usar ejecutando el backend del A5, en 
+# la rama de routingImprovment+modelPredictiu i estando en la carpeta de /routing/pathfinng, 
+# i ejecutando uvicorn api:app --reload --port 9000)
+# Espera un JSON amb les coordenades normalitzades dels punts d'inici i final:
+#
+#json
+#{
+#  "start": [x_start, y_start],
+#  "goal": [x_goal, y_goal]
+#}
+#
+#- start: Coordenades normalitzades del punt d'inici (valors entre 0 i 1).
+#- goal: Coordenades normalitzades del punt de destí (valors entre 0 i 1).
+# ------------------------------------------------------------------------
+# Si es troba un camí, la resposta serà un JSON amb:
+#- length: Nombre total de passos en el camí.
+#- path: Llista de punts del camí, cadascun amb coordenades normalitzades.
+
+#json
+#{
+#  "length": 273,
+#  "path": [
+#    [0.501, 0.398],
+#    [0.502, 0.397],
+#    ...
+#  ]
+#}
 @app.post("/api/shortest-path")
 async def get_shortest_path(payload: dict = Body(...)):
     """
@@ -554,7 +583,8 @@ async def get_shortest_path(payload: dict = Body(...)):
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error al conectar con la API externa: {str(e)}")
 
-
+# Peticion para obtener todos los nombres de servicios
+# Devuelve: [{name: "nombredelservicio"}, ...]
 @app.get("/api/services")
 async def get_all_services(db: Session = Depends(get_db)):
     """
