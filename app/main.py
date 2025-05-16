@@ -272,6 +272,8 @@ async def getValoration(service_id: int, db: Session = Depends(get_db)):
 
 
 
+
+#Aquest endpoint ens retorna la posició d'un usuari donat un payload de mesures wifi
 @app.post("/api/getUserPosition")
 async def getUserPosition(payload: WifiMeasuresList):
     ai_url = "http://127.0.0.1:8080/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
@@ -287,6 +289,29 @@ async def getUserPosition(payload: WifiMeasuresList):
             }
     except httpx.HTTPError as e:
         raise HTTPException(status_code=500, detail=f"Error al comunicar con la IA: {str(e)}")
+    
+
+#Aquest endpoint ens retorna el servei més proper a una posició donada
+#De moment no retorna el servei més proper, només la llista de serveis ja que falta l'endpoint de la IA
+@app.post("/api/getNearestService")
+async def getNearestService(userLocation: LocationSchema, db: Session = Depends(get_db)):
+    services = db.query(Service.id, Service.location_x, Service.location_y).all()
+    if not services:
+        raise HTTPException(status_code=404, detail="No s'han trobat serveis")
+    
+    inverted_services = [
+    {
+        "id": s.id,
+        "location_x": float(s.location_x),
+        "location_y": 1 - float(s.location_y)
+    }
+    for s in services
+    ]
+
+    return inverted_services
+
+        
+    
 
 
 
