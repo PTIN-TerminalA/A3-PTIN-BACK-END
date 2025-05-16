@@ -10,6 +10,7 @@ from bson import ObjectId
 from fastapi import Path
 from datetime import datetime
 from typing import List
+import httpx
 
 
 # --- SQL imports ---
@@ -25,6 +26,7 @@ from app.services.encryption import encrypt_dni, decrypt_dni
 from app.services.token import create_access_token, decode_access_token
 from app.models.service import Service
 from app.schemas.service import ServiceSchema
+from app.schemas.location import LocationSchema, WifiMeasuresList
 
 
 # --- Mongo imports ---
@@ -218,6 +220,22 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
 async def getServices(db: Session = Depends(get_db)):
     services = db.query(Service).all()
     return services
+
+@app.post("/api/getUserPosition")
+async def getUserPosition(payload: WifiMeasuresList):
+    ai_url = "http://127.0.0.1:8080/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(ai_url, json=payload.model_dump())
+            response.raise_for_status()  # lanza excepción si status != 200
+            data = response.json()
+            return {
+                "x": data["x"],
+                "y": data["y"]
+            }
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=500, detail=f"Error al comunicar con la IA: {str(e)}")
 
 
 
