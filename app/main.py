@@ -491,37 +491,42 @@ async def update_profile(
 @app.get("/api/establishment-position")
 async def get_establishment_position(
     name: str = Query(..., description="Nombre del establecimiento"),
-    #creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db)
 ):
     """
     Endpoint para obtener la posición de un establecimiento por su nombre.
     Devuelve las coordenadas (location_x, location_y).
     """
-    # Validar el token del usuario
-    #decode_access_token(creds.credentials)
+    try:
+        print(f"Buscando establecimiento con nombre: {name}")
 
-    print(f"Buscando establecimiento con nombre: {name}")
+        # Consultar la base de datos para obtener las coordenadas del establecimiento
+        establishment = db.execute(
+            text("SELECT location_x, location_y FROM service WHERE LOWER(name) = LOWER(:name)"),
+            {"name": name}
+        ).fetchone()
 
-    # Consultar la base de datos para obtener las coordenadas del establecimiento
-    establishment = db.execute(
-        text("SELECT location_x, location_y FROM service WHERE name = :name"),
-        {"name": name}
-    ).fetchone()
+        print(f"Resultado de la consulta: {establishment}")
 
-    print(f"Resultado de la consulta: {establishment}")
+        if not establishment:
+            print("Establecimiento no encontrado")
+            raise HTTPException(status_code=404, detail="Establecimiento no encontrado")
 
-    if not establishment:
-        print("Establecimiento no encontrado")
-        raise HTTPException(status_code=404, detail="Establecimiento no encontrado")
+        print(f"Coordenadas encontradas: location_x={establishment[0]}, location_y={establishment[1]}")
 
-    print(f"Coordenadas encontradas: location_x={establishment[0]}, location_y={establishment[1]}")
+        return {
+            "name": name,
+            "location_x": establishment[0],
+            "location_y": establishment[1]
+        }
 
-    return {
-        "name": name,
-        "location_x": establishment[0],
-        "location_y": establishment[1]
-    }
+    except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP para que sean manejadas correctamente
+        raise http_exc
+    except Exception as e:
+        # Manejar errores generales
+        print(f"Error al consultar la base de datos: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
 
 # Peticion a la API externa
 @app.post("/api/shortest-path")
@@ -548,6 +553,40 @@ async def get_shortest_path(payload: dict = Body(...)):
             raise HTTPException(status_code=response.status_code, detail="Error desconocido en la API externa.")
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error al conectar con la API externa: {str(e)}")
+
+
+@app.get("/api/services")
+async def get_all_services(db: Session = Depends(get_db)):
+    """
+    Endpoint para obtener todos los nombres de los servicios en la base de datos.
+    Devuelve una lista de objetos con los nombres de los servicios.
+    """
+    try:
+        print("Obteniendo todos los nombres de los servicios")
+
+        # Consultar la base de datos para obtener los nombres de los servicios
+        services = db.execute(
+            text("SELECT name FROM service")
+        ).fetchall()
+
+        print(f"Servicios encontrados: {services}")
+
+        if not services:
+            print("No se encontraron servicios")
+            raise HTTPException(status_code=404, detail="No se encontraron servicios")
+
+        # Formatear los resultados como una lista de objetos con 'name'
+        service_list = [{"name": service[0]} for service in services]
+
+        return service_list
+
+    except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP para que sean manejadas correctamente
+        raise http_exc
+    except Exception as e:
+        # Manejar errores generales
+        print(f"Error al consultar la base de datos: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
 
 
 from app.vehicles.router import router as vehicle_router
