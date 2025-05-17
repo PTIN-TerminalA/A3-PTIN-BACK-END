@@ -613,7 +613,84 @@ async def update_profile(
     return {"message": "Perfil actualitzat correctament"}
 
 
+#Endpoint que modifica l'estat d'un cotxe a "Esperant" donat el seu ID.
+#Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
+#Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
+@app.put("/cotxe/{cotxe_id}/esperant")
+async def state_car_waiting(cotxe_id: str, db=Depends(get_mongo_db)):
+   
+    # Busquem el cotxe a la base de dades
+    car = await db["car"].find_one({"_id": cotxe_id})
+    if not car:
+        raise HTTPException(status_code=404, detail="Cotxe no trobat.")
 
+    # Actualitzem l'estat a 'Esperant'
+    await db["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Esperant"}}
+    )
+
+    return {"missatge": "Cotxe actualitzat correctament a 'Esperant'."}
+
+
+#Endpoint que modifica l'estat d'un cotxe a "En curs" donat el seu ID.
+#Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/en_curs
+#Post: L'estat del car amb _id = {cotxe_id} passa a ser "En curs"
+@app.put("/cotxe/{cotxe_id}/en_curs")
+async def state_car_in_progress(cotxe_id: str, db=Depends(get_mongo_db)):
+   
+    # Busquem el cotxe a la base de dades
+    car = await db["car"].find_one({"_id": cotxe_id})
+    if not car:
+        raise HTTPException(status_code=404, detail="Cotxe no trobat.")
+
+    # Actualitzem l'estat a 'En curs'
+    await db["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "En curs"}}
+    )
+
+    return {"missatge": "Cotxe actualitzat correctament a 'En curs'."}
+
+
+#Endpoint que modifica l'estat d'un cotxe a "Solicitat" donat el seu ID.
+#Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/solicitat
+#Post: L'estat del car amb _id = {cotxe_id} passa a ser "Solicitat"
+@app.put("/cotxe/{cotxe_id}/solicitat")
+async def state_car_requested(cotxe_id: str, db=Depends(get_mongo_db)):
+   
+    # Busquem el cotxe a la base de dades
+    car = await db["car"].find_one({"_id": cotxe_id})
+    if not car:
+        raise HTTPException(status_code=404, detail="Cotxe no trobat.")
+
+    # Actualitzem l'estat a 'Solicitat'
+    await db["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Solicitat"}}
+    )
+
+    return {"missatge": "Cotxe actualitzat correctament a 'Solicitat'."}
+
+
+#Endpoint que modifica l'estat d'un cotxe a "Disponible" donat el seu ID.
+#Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/disponible
+#Post: L'estat del car amb _id = {cotxe_id} passa a ser "Disponible"
+@app.put("/cotxe/{cotxe_id}/disponible")
+async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
+   
+    # Busquem el cotxe a la base de dades
+    car = await db["car"].find_one({"_id": cotxe_id})
+    if not car:
+        raise HTTPException(status_code=404, detail="Cotxe no trobat.")
+
+    # Actualitzem l'estat a 'Disponible'
+    await db["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Disponible"}}
+    )
+
+    return {"missatge": "Cotxe actualitzat correctament a 'Disponible'."}
 
 from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
