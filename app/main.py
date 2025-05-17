@@ -3,6 +3,8 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import requests
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from argon2 import PasswordHasher
@@ -11,6 +13,9 @@ from fastapi import Path
 from datetime import datetime
 from typing import List
 import httpx
+import asyncio
+import websockets
+import json
 
 
 # --- SQL imports ---
@@ -38,7 +43,9 @@ app = FastAPI()
 #from app.vehicles import router as vehicle_router
 #app.include_router(vehicle_router)
 
-
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(connect_and_listen())
 
 
 # 🔓 CORS (permitir React en :5173)
@@ -612,6 +619,10 @@ async def update_profile(
     db.commit()
     return {"message": "Perfil actualitzat correctament"}
 
+# --- Peticion ruta ---
+# Primero cogemos la posicion de los establecimientos de la base de datos
+# luego se hace la peticion a la API externa y se devuelve el resultado
+
 
 #Endpoint que modifica l'estat d'un cotxe a "Esperant" donat el seu ID.
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
@@ -623,6 +634,137 @@ async def state_car_waiting(cotxe_id: str, db=Depends(get_mongo_db)):
     car = await db["car"].find_one({"_id": cotxe_id})
     if not car:
         raise HTTPException(status_code=404, detail="Cotxe no trobat.")
+
+# Peticion para obtener la posicion del establecimiento pasado por parametro 
+# Uso: /api/establishment-position?name="nombredelestablecimiento"
+# Devuelve: {name: "nombredelestablecimiento", location_x: 0.5, location_y: 0.5}
+@app.get("/api/establishment-position")
+async def get_establishment_position(
+    name: str = Query(..., description="Nombre del establecimiento"),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener la posición de un establecimiento por su nombre.
+    Devuelve las coordenadas (location_x, location_y).
+    """
+    try:
+        print(f"Buscando establecimiento con nombre: {name}")
+
+        # Consultar la base de datos para obtener las coordenadas del establecimiento
+        establishment = db.execute(
+            text("SELECT location_x, location_y FROM service WHERE LOWER(name) = LOWER(:name)"),
+            {"name": name}
+        ).fetchone()
+
+        print(f"Resultado de la consulta: {establishment}")
+
+        if not establishment:
+            print("Establecimiento no encontrado")
+            raise HTTPException(status_code=404, detail="Establecimiento no encontrado")
+
+        print(f"Coordenadas encontradas: location_x={establishment[0]}, location_y={establishment[1]}")
+
+        return {
+            "name": name,
+            "location_x": establishment[0],
+            "location_y": establishment[1]
+        }
+
+    except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP para que sean manejadas correctamente
+        raise http_exc
+    except Exception as e:
+        # Manejar errores generales
+        print(f"Error al consultar la base de datos: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
+
+# Peticion a la API externa
+# (En caso de no estar listo el controller, se puede usar ejecutando el backend del A5, en 
+# la rama de routingImprovment+modelPredictiu i estando en la carpeta de /routing/pathfinng, 
+# i ejecutando uvicorn api:app --reload --port 9000)
+# Espera un JSON amb les coordenades normalitzades dels punts d'inici i final:
+#
+#json
+#{
+#  "start": [x_start, y_start],
+#  "goal": [x_goal, y_goal]
+#}
+#
+#- start: Coordenades normalitzades del punt d'inici (valors entre 0 i 1).
+#- goal: Coordenades normalitzades del punt de destí (valors entre 0 i 1).
+# ------------------------------------------------------------------------
+# Si es troba un camí, la resposta serà un JSON amb:
+#- length: Nombre total de passos en el camí.
+#- path: Llista de punts del camí, cadascun amb coordenades normalitzades.
+
+#json
+#{
+#  "length": 273,
+#  "path": [
+#    [0.501, 0.398],
+#    [0.502, 0.397],
+#    ...
+#  ]
+#}
+@app.post("/api/shortest-path")
+async def get_shortest_path(payload: dict = Body(...)):
+    """
+    Endpoint para calcular el camino más corto entre dos puntos.
+    """
+    try:
+        # Realizar la petición a la API externa
+        response = requests.post(
+            "http://127.0.0.1:9000/path",
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        # Manejar la respuesta de la API externa
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 400:
+            raise HTTPException(status_code=400, detail="Bad Request: Puntos fuera de los límites o no transitables.")
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Not Found: No se encontró un camino entre los puntos especificados.")
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Error desconocido en la API externa.")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error al conectar con la API externa: {str(e)}")
+
+# Peticion para obtener todos los nombres de servicios
+# Devuelve: [{name: "nombredelservicio"}, ...]
+@app.get("/api/services")
+async def get_all_services(db: Session = Depends(get_db)):
+    """
+    Endpoint para obtener todos los nombres de los servicios en la base de datos.
+    Devuelve una lista de objetos con los nombres de los servicios.
+    """
+    try:
+        print("Obteniendo todos los nombres de los servicios")
+
+        # Consultar la base de datos para obtener los nombres de los servicios
+        services = db.execute(
+            text("SELECT name FROM service")
+        ).fetchall()
+
+        print(f"Servicios encontrados: {services}")
+
+        if not services:
+            print("No se encontraron servicios")
+            raise HTTPException(status_code=404, detail="No se encontraron servicios")
+
+        # Formatear los resultados como una lista de objetos con 'name'
+        service_list = [{"name": service[0]} for service in services]
+
+        return service_list
+
+    except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP para que sean manejadas correctamente
+        raise http_exc
+    except Exception as e:
+        # Manejar errores generales
+        print(f"Error al consultar la base de datos: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
 
     # Actualitzem l'estat a 'Esperant'
     await db["car"].update_one(
@@ -696,8 +838,22 @@ from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
 
-
-
-
+# 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
+async def connect_and_listen():
+    uri = "ws://192.168.10.11:8766"
+    print(f"Intentando conectar a WebSocket en {uri}")
+    while True:
+        try:
+            async with websockets.connect(uri) as websocket:
+                print("✅ Conectado al WebSocket remoto")
+                async for message in websocket:
+                    data = json.loads(message)
+                    print("📨 Mensaje recibido:", data)
+                    # Aquí puedes procesar el mensaje, guardarlo en base de datos, emitirlo, etc.
+        except Exception as e:
+            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
+            await asyncio.sleep(5)
+            
+            
 #-------------------------Endpoints localizacion e IA-----------------------------------
 
