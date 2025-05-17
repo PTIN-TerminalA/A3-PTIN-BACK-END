@@ -304,7 +304,6 @@ async def getUserPosition(payload: WifiMeasuresList):
     
 
 #Aquest endpoint ens retorna el servei més proper a una posició donada
-#De moment no retorna el servei més proper, només la llista de serveis ja que falta l'endpoint de la IA
 
 @app.post("/api/getNearestService")
 
