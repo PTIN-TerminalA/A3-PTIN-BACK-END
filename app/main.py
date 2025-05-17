@@ -11,6 +11,9 @@ from argon2 import PasswordHasher
 from bson import ObjectId
 from fastapi import Path
 from datetime import datetime
+import asyncio
+import websockets
+import json
 
 
 # --- SQL imports ---
@@ -34,7 +37,9 @@ app = FastAPI()
 #from app.vehicles import router as vehicle_router
 #app.include_router(vehicle_router)
 
-
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(connect_and_listen())
 
 
 # 🔓 CORS (permitir React en :5173)
@@ -622,3 +627,21 @@ async def get_all_services(db: Session = Depends(get_db)):
 from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
+
+# 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
+async def connect_and_listen():
+    uri = "ws://192.168.10.11:8766"
+    print(f"Intentando conectar a WebSocket en {uri}")
+    while True:
+        try:
+            async with websockets.connect(uri) as websocket:
+                print("✅ Conectado al WebSocket remoto")
+                async for message in websocket:
+                    data = json.loads(message)
+                    print("📨 Mensaje recibido:", data)
+                    # Aquí puedes procesar el mensaje, guardarlo en base de datos, emitirlo, etc.
+        except Exception as e:
+            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
+            await asyncio.sleep(5)
+            
+    
