@@ -6,15 +6,15 @@
 
 Assegura't de tenir instal·lades les següents dependències:
 
-* fastapi  
-* uvicorn  
-* sqlalchemy  
-* pydantic  
-* argon2-cffi  
-* motor  
-* requests  
-* httpx  
-* websockets  
+* fastapi
+* uvicorn
+* sqlalchemy
+* pydantic
+* argon2-cffi
+* motor
+* requests
+* httpx
+* websockets
 
 Pots instal·lar-les amb:
 
@@ -32,128 +32,212 @@ Pots arrencar el servidor amb:
 uvicorn app.main:app --reload
 ```
 
-Això posarà en marxa el servidor a `http://127.0.0.1:8000/` per defecte.  
-La documentació interactiva està disponible a:  
+La documentació interactiva està disponible a:
 ➡️ `http://127.0.0.1:8000/docs`
 
 ---
 
-## 🔐 Autenticació i usuaris
+## 🔐 Autenticació i Usuaris
 
 ### `POST /api/register`
+
 Registra un nou usuari.
 
+#### Exemple
+
+```json
+{
+  "name": "Joan",
+  "dni": "12345678A",
+  "email": "joan@example.com",
+  "password": "segura123",
+  "usertype": "regular"
+}
+```
+
 ### `POST /api/login`
+
 Autentica un usuari registrat.
 
+#### Exemple
+
+```json
+{
+  "email": "joan@example.com",
+  "password": "segura123"
+}
+```
+
 ### `POST /api/register-login-google`
-Login o registre a través de Google.
+
+Login o registre mitjançant Google.
 
 ### `GET /api/get_user_id`
-Obtén l'ID de l'usuari des d’un token.
+
+Retorna l'`user_id` del token rebut com a paràmetre.
 
 ### `POST /api/update-dni`
-Actualitza el DNI de l’usuari.
+
+Actualitza el DNI de l'usuari.
 
 ### `GET /api/get-user-type`
-Retorna el tipus d’usuari: `regular`, `admin`, `superadmin`, etc.
 
-### `GET /api/profile`
-Consulta el perfil complet de l’usuari.
+Retorna el tipus d'usuari (admin, regular, etc).
 
-### `PATCH /api/profile`
-Actualitza el perfil de l’usuari.
+### `GET /api/profile`  /  `PATCH /api/profile`
+
+Consulta o actualitza el perfil de l'usuari autenticat.
 
 ---
 
-## 🗺️ Serveis i tags
+## 🗺️ Serveis i Etiquetes
 
 ### `GET /api/getServices`
-Llista de serveis disponibles.
+
+Llista tots els serveis disponibles.
 
 ### `GET /api/getPrices`
-Preus dels serveis.
+
+Preus definits per servei.
 
 ### `POST /api/getSchedules`
-Horaris disponibles per un servei concret.
+
+Horaris disponibles d'un servei.
+
+```json
+{
+  "service_id": 2
+}
+```
 
 ### `GET /api/getTags`
-Tots els tags disponibles.
+
+Tots els tags existents.
 
 ### `POST /api/getServiceTag`
-Tag associat a un servei.
+
+Tag associat a un servei:
+
+```json
+{
+  "service_id": 2
+}
+```
 
 ### `POST /api/getValoration`
-Valoracions per a un servei.
+
+Valoracions d'un servei:
+
+```json
+{
+  "service_id": 2
+}
+```
 
 ---
 
 ## 📍 Localització i IA
 
 ### `POST /api/getUserPosition`
-Rep mesures WiFi i retorna la posició estimada de l’usuari.
+
+Retorna la posició estimada basat en mesures WiFi.
+
+#### Exemple
+
+```json
+{
+  "measures": [
+    { "mac": "AA:BB:CC:DD:EE:01", "rssi": -50 },
+    { "mac": "AA:BB:CC:DD:EE:02", "rssi": -60 }
+  ]
+}
+```
 
 ### `POST /api/getNearestService`
-Rep una posició d’usuari i retorna la llista de serveis més propers (provisional).
+
+Retorna serveis propers a una posició.
+
+```json
+{
+  "x": 0.45,
+  "y": 0.75
+}
+```
 
 ---
 
-## 🧭 Rutes i reserves (MongoDB)
+## 🛣️ Reserves (MongoDB)
 
 ### `GET /reserves`
-Llista de reserves amb filtres opcionals: email, estat, dates, etc.
+
+Llista reserves amb filtres opcionals (email, estat, dates, etc).
 
 ### `POST /reserves/usuari`
+
 Crea una reserva com a usuari autenticat.
 
 ### `POST /reserves/programada`
+
 Crea una reserva com a administrador.
 
+```json
+{
+  "user_email": "anna@example.com",
+  "start_location": "entrada",
+  "end_location": "sortida",
+  "scheduled_time": "2025-06-01T12:00:00",
+  "state": "Programada"
+}
+```
+
 ### `PATCH /reserves/{reserve_id}`
-Actualitza una reserva específica.
+
+Actualitza una reserva.
 
 ### `DELETE /reserves/{reserve_id}`
+
 Elimina una reserva.
 
 ---
 
-## 🧠 Routing i IA externa
+## 🧠 IA i Routing Extern
 
 ### `GET /api/establishment-position`
-Donat el nom d’un establiment, retorna la seva posició.
+
+Retorna la posició d'un establiment per nom.
 
 ### `POST /api/shortest-path`
+
 Calcula el camí més curt entre dos punts.
 
-#### Cos de la sol·licitud:
+#### Exemple
+
 ```json
 {
-  "start": [x_start, y_start],
-  "goal":  [x_goal,  y_goal]
+  "start": [0.5, 0.4],
+  "goal":  [0.6, 0.3]
 }
 ```
 
-#### Exemple amb `curl`:
-```bash
-curl -X POST "http://127.0.0.1:8000/api/shortest-path" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "start": [0.5016, 0.3987],
-    "goal":  [0.5109, 0.3368]
-  }'
-```
+---
 
-#### Resposta:
-```json
-{
-  "length": 273,
-  "path": [
-    [0.501, 0.398],
-    [0.502, 0.397],
-    ...
-  ]
-}
-```
+## 🚗 Gestor d'Estats de Cotxe
+
+### `PUT /cotxe/{cotxe_id}/esperant`
+
+Canvia estat del cotxe a **"Esperant"**.
+
+### `PUT /cotxe/{cotxe_id}/en_curs`
+
+Canvia estat del cotxe a **"En curs"**.
+
+### `PUT /cotxe/{cotxe_id}/solicitat`
+
+Canvia estat del cotxe a **"Solicitat"**.
+
+### `PUT /cotxe/{cotxe_id}/disponible`
+
+Canvia estat del cotxe a **"Disponible"**.
 
 ---
 
