@@ -37,6 +37,12 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str
 
+class TokenRequest(BaseModel):
+    access_token: str
+
+    class Config:
+        orm_mode = True
+
 class TokenResponseGoogle(BaseModel):
     access_token: str
     token_type: str

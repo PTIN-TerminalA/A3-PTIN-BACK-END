@@ -15,7 +15,7 @@ import httpx
 
 # --- SQL imports ---
 from app.database import get_db
-from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, ProfileUpdateRequest, TokenResponseGoogle, UpdateDniRequest, UserTypeRequest, UserTypeResponse
+from app.schemas.user import LoginRequest, RegisterRequest, TokenResponse, TokenRequest, ProfileUpdateRequest, TokenResponseGoogle, UpdateDniRequest, UserTypeRequest, UserTypeResponse
 from app.models.user import User
 from app.models.regular import Regular
 from app.schemas.regular import RegisterRegularRequest, RegularResponse
@@ -315,7 +315,16 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
     return inverted_services
 
-        
+#Aquest endpoint ens retorna tota la informació d'un user donat el seu ID
+ 
+@app.post ("/api/getUserInfo")
+async def getUserInfo(data: TokenRequest, db: Session = Depends(get_db)):
+    user_id = decode_access_token(data.token)
+    user_id = int(user_id["sub"])
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuari no trobat")
+    return user
     
 
 
