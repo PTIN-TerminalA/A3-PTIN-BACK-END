@@ -405,7 +405,104 @@ async def list_reserves(
 
     return {"reserves": routes}
 
-# POST /reserves/usuari  (reservacotxe)
+
+
+# --- POST /reserves/app (reservas desde app móvil, con scheduled_time automático y estado fijo) ---
+@app.post("/reserves/app")
+async def create_route_app(
+    payload: dict = Body(...),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db_mongo=Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db)
+):
+    """
+    Crea una reserva desde la app:
+    1) Decodifica token → user_id.
+    2) Obtiene servicio más cercano vía getNearestService(location).
+    3) Usa el nombre de ese servicio como start_location.
+    4) end_location lo indica el usuario en payload.
+    5) scheduled_time = ahora (); state = "En curs".
+    6) Marca el coche como "Solicitat".
+    7) Inserta en Mongo y en historial de user.
+    8) Devuelve {"message", "data": reserva, "car_id": "<ObjectId>"}
+    """
+    # 1) Decodificar token y extraer user_id
+    payload_token = decode_access_token(creds.credentials)
+    user_id = int(payload_token.get("sub"))
+
+    # 2) Validar y extraer ubicación actual de payload
+    loc = payload.get("location")
+    if not loc or not isinstance(loc, dict):
+        raise HTTPException(status_code=400, detail="Debes enviar `location` con x e y.")
+    try:
+        user_location = LocationSchema(x=loc["x"], y=loc["y"])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato inválido para `location`.")
+
+    # 3) Llamar a getNearestService(...) para obtener servicio más cercano
+    nearest_resp = await getNearestService(user_location, db_sql)
+    service_id = nearest_resp.get("nearest_service_id")
+    if service_id is None:
+        raise HTTPException(status_code=500, detail="No se pudo determinar servicio cercano.")
+    service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
+    if not service_obj:
+        raise HTTPException(status_code=404, detail="Servicio no encontrado en SQL.")
+    start_location_name = service_obj.name
+
+    # 4) Validar end_location en payload
+    end_loc = payload.get("end_location")
+    if not end_loc or not isinstance(end_loc, str):
+        raise HTTPException(status_code=400, detail="Debes indicar `end_location` (destino).")
+
+    # 5) scheduled_time = ahora(); state fijo "En curs"
+    scheduled_dt = datetime.utcnow()
+    state = "En curs"
+
+    # 6) Buscar coche disponible y marcarlo "Solicitat"
+    car = await db_mongo["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(status_code=400, detail="No hay coches disponibles.")
+    await db_mongo["car"].update_one(
+        {"_id": car["_id"]},
+        {"$set": {"state": "Solicitat"}}
+    )
+    car_id = car["_id"]
+
+    # 7) Construir documento y guardarlo en "route"
+    new_route_doc = {
+        "user_id":        user_id,
+        "start_location": start_location_name,
+        "end_location":   end_loc,
+        "scheduled_time": scheduled_dt,
+        "state":          state,
+        "car_id":         car_id
+    }
+    result = await db_mongo["route"].insert_one(new_route_doc)
+    inserted = await db_mongo["route"].find_one({"_id": result.inserted_id})
+    if not inserted:
+        raise HTTPException(status_code=500, detail="No se pudo recuperar la reserva.")
+
+    # 8) Upsert en colección "user" para historial
+    await db_mongo["user"].update_one(
+        {"id": user_id},
+        {
+            "$push":       {"route_history": inserted},
+            "$setOnInsert": {"id": user_id}
+        },
+        upsert=True
+    )
+
+    # 9) Devolver respuesta con car_id
+    return {
+        "message": "Reserva (desde app) confirmada con éxito.",
+        "data": serialize_mongo_doc(inserted),
+        "car_id": str(car_id)
+    }
+
+
+
+
+# --- POST /reserves/usuari (reservacotxe) ---
 @app.post("/reserves/usuari")
 async def create_route_user(
     route: Route,
@@ -424,6 +521,7 @@ async def create_route_user(
         {"_id": car["_id"]},
         {"$set": {"state": "Ocupat"}}
     )
+    car_id = car["_id"]  # guardamos el id del coche
 
     # 3) Convertir scheduled_time a datetime si viene como string
     sched = route.scheduled_time
@@ -440,7 +538,7 @@ async def create_route_user(
         "end_location":   route.end_location,
         "scheduled_time": sched,
         "state":          route.state,
-        "car_id":         car["_id"]
+        "car_id":         car_id
     }
 
     # 5) Insertar en la colección `route`
@@ -459,7 +557,13 @@ async def create_route_user(
         upsert=True
     )
 
-    return {"message": "Reserva confirmada amb èxit!", "data": serialize_mongo_doc(inserted)}
+    # 7) Devolver response, incluyendo el car_id asignado
+    return {
+        "message": "Reserva confirmada amb èxit!",
+        "data": serialize_mongo_doc(inserted),
+        "car_id": str(car_id)
+    }
+
 
 
 # --- POST /reserves/programada (gestioReserves) ---
@@ -482,7 +586,7 @@ async def create_route_admin(
         raise HTTPException(404, "Usuari no trobat")
     user_id = user.id
 
-    # 3) Buscar coche disponible y marcarlo
+    # 3) Buscar coche disponible y marcarlo ocupado
     car = await db_mongo["car"].find_one({"state": "Disponible"})
     if not car:
         raise HTTPException(400, "No hi ha cotxes disponibles")
@@ -490,6 +594,7 @@ async def create_route_admin(
         {"_id": car["_id"]},
         {"$set": {"state": "Ocupat"}}
     )
+    car_id = car["_id"]  # guardamos el id del coche
 
     # 4) Convertir scheduled_time a datetime
     sched_str = payload.get("scheduled_time")
@@ -505,7 +610,7 @@ async def create_route_admin(
         "end_location":   payload["end_location"],
         "scheduled_time": sched,
         "state":          payload.get("state", "Programada"),
-        "car_id":         car["_id"]
+        "car_id":         car_id
     }
 
     # 6) Insertar en la colección `route`
@@ -514,7 +619,7 @@ async def create_route_admin(
     if not inserted:
         raise HTTPException(500, "No s'ha pogut recuperar la reserva")
 
-    # 7) Upsert en la colección `user` para historial
+    # 7) Upsert en la colección `user` para histórico
     await db_mongo["user"].update_one(
         {"id": user_id},
         {
@@ -524,9 +629,15 @@ async def create_route_admin(
         upsert=True
     )
 
+    # 8) Serializar y añadir user_email en la respuesta
     out = serialize_mongo_doc(inserted)
     out["user_email"] = email
-    return {"reserves": out}
+
+    # 9) Devolver response incluyendo el car_id asignado
+    return {
+        "reserves": out,
+        "car_id": str(car_id)
+    }
 
 # --- PATCH /reserves/{reserve_id} ---
 @app.patch("/reserves/{reserve_id}")
