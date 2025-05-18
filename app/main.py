@@ -304,23 +304,65 @@ async def getUserPosition(payload: WifiMeasuresList):
     
 
 #Aquest endpoint ens retorna el servei més proper a una posició donada
-#De moment no retorna el servei més proper, només la llista de serveis ja que falta l'endpoint de la IA
+
 @app.post("/api/getNearestService")
+
 async def getNearestService(userLocation: LocationSchema, db: Session = Depends(get_db)):
     services = db.query(Service.id, Service.location_x, Service.location_y).all()
     if not services:
         raise HTTPException(status_code=404, detail="No s'han trobat serveis")
-    
-    inverted_services = [
-    {
-        "id": s.id,
-        "location_x": float(s.location_x),
-        "location_y": 1 - float(s.location_y)
-    }
-    for s in services
-    ]
 
-    return inverted_services
+    # Preparar el diccionario de servicios para la petición a la API de routing
+    service_dict = {
+        s.id: (float(s.location_x), float(s.location_y))
+        for s in services
+    }
+
+    payload = {
+        "position": (userLocation.x, userLocation.y),
+        "request": service_dict
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+
+    nearest_data = response.json()  # Ejemplo: {"id": 42}
+
+    # Aquí puedes devolver el ID, o buscar info extra en la base de datos y devolver más detalles
+    return {"nearest_service_id": nearest_data["id"]}
+
+
+# 🚗 Endpoint para obtener el coche más cercano
+@app.post("/api/getNearestCar")
+async def get_nearest_car(userLocation: LocationSchema):
+    if not live_car_positions:
+        raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
+
+    # Preparar el diccionario de coches para la petición a la API de routing
+    car_dict = {
+        c._id: (float(c.location_x), float(c.location_y))
+        for c in live_car_positions
+    }
+
+    payload = {
+        "position": (userLocation.x, userLocation.y),
+        "request": live_car_positions
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+
+    nearest_data = response.json()  # Ejemplo: {"_id": C1}
+    return {"nearest_car_id": nearest_data["_id"]}
+
 
 #Aquest endpoint ens retorna tota la informació d'un user donat el seu ID
  
@@ -331,6 +373,7 @@ async def getUserInfo(data: TokenRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuari no trobat")
+    
     return user
     
 
@@ -766,6 +809,18 @@ async def get_all_services(db: Session = Depends(get_db)):
         print(f"Error al consultar la base de datos: {str(e)}")
         raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
 
+
+#Endpoint que modifica l'estat d'un cotxe a "Esperant" donat el seu ID.
+#Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
+#Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
+@app.put("/cotxe/{cotxe_id}/esperant")
+async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
+   
+    # Busquem el cotxe a la base de dades
+    car = await db["car"].find_one({"_id": cotxe_id})
+    if not car:
+        raise HTTPException(status_code=404, detail="Cotxe no trobat.")
+
     # Actualitzem l'estat a 'Esperant'
     await db["car"].update_one(
         {"_id": car["_id"]},
@@ -850,10 +905,17 @@ async def connect_and_listen():
                     data = json.loads(message)
                     print("📨 Mensaje recibido:", data)
                     # Aquí puedes procesar el mensaje, guardarlo en base de datos, emitirlo, etc.
+                    
+                    #codi provisional per rebre dades del cotxe i introduïrles al array live_car_positions
+                    #car_id = data.get("id")
+                    #x = data.get("x")
+                    #y = data.get("y")
+                    #if car_id is not None and x is not None and y is not None:
+                    #    live_car_positions[car_id] = (float(x), float(y))
+
         except Exception as e:
             print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
             await asyncio.sleep(5)
             
             
 #-------------------------Endpoints localizacion e IA-----------------------------------
-
