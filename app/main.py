@@ -51,7 +51,7 @@ async def startup_event():
 # 🔓 CORS (permitir React en :5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -542,7 +542,18 @@ async def create_route_user(
     payload = decode_access_token(creds.credentials)
     user_id = int(payload.get("sub"))
 
-    # 2) Buscar coche disponible y marcarlo ocupado
+    # 2) Obtener coordenadas del punto de recogida
+    establishment = await db["establishment"].find_one(
+        {"name": route.start_location},
+        {"location_x": 1, "location_y": 1}
+    )
+    if not establishment:
+        raise HTTPException(400, f"No s'ha trobat l'establiment {route.start_location}")
+    
+    x_coord = establishment["location_x"]
+    y_coord = establishment["location_y"]
+
+    # 3) Buscar coche disponible y marcarlo ocupado
     car = await db["car"].find_one({"state": "Disponible"})
     if not car:
         raise HTTPException(400, "No hi ha cotxes disponibles ara mateix.")
@@ -552,7 +563,7 @@ async def create_route_user(
     )
     car_id = car["_id"]  # guardamos el id del coche
 
-    # 3) Convertir scheduled_time a datetime si viene como string
+    # 4) Convertir scheduled_time a datetime si viene como string
     sched = route.scheduled_time
     if isinstance(sched, str):
         try:
@@ -560,7 +571,7 @@ async def create_route_user(
         except ValueError:
             raise HTTPException(400, "scheduled_time ha de ser ISODate o ISO string")
 
-    # 4) Construir documento en orden fijo
+    # 5) Construir documento en orden fijo
     doc = {
         "user_id":        user_id,
         "start_location": route.start_location,
@@ -570,13 +581,13 @@ async def create_route_user(
         "car_id":         car_id
     }
 
-    # 5) Insertar en la colección `route`
+    # 6) Insertar en la colección `route`
     result = await db["route"].insert_one(doc)
     inserted = await db["route"].find_one({"_id": result.inserted_id})
     if not inserted:
         raise HTTPException(500, "No s'ha pogut recuperar la reserva")
 
-    # 6) Upsert en la colección `user` para mantener el historial
+    # 7) Upsert en la colección `user` para mantener el historial
     await db["user"].update_one(
         {"id": user_id},
         {
@@ -586,7 +597,20 @@ async def create_route_user(
         upsert=True
     )
 
-    # 7) Devolver response, incluyendo el car_id asignado
+    # 8) Llamar al controlador para mover el coche
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "http://controller/demana-cotxe",  # Ajusta esta URL según tu configuración
+                json={"x": x_coord, "y": y_coord},
+                timeout=5.0
+            )
+            response.raise_for_status()
+    except Exception as e:
+        # No fallamos la reserva si hay error con el controlador, solo lo registramos
+        print(f"Error al contactar con el controlador: {str(e)}")
+
+    # 9) Devolver response, incluyendo el car_id asignado
     return {
         "message": "Reserva confirmada amb èxit!",
         "data": serialize_mongo_doc(inserted),
