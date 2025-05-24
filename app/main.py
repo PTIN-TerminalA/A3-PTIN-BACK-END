@@ -1143,15 +1143,14 @@ async def rate_service(
     """
     Endpoint para valorar un servicio.
     - service_id: ID del servicio a valorar.
-    - rating: Valoración del servicio (0.01 - 9.99).
+    - rating: Valoración del servicio (0.01 - 5).
     - comment: Comentario opcional sobre el servicio.
     """
-    if rating < 0.01 or rating > 9.99:
+    if rating < 0.01 or rating > 5:
         raise HTTPException(status_code=400, detail="La valoració ha de ser entre 0.01 i 9.99.")
 
     # Decodificar el token para obtener el user_id
     payload = decode_access_token(creds.credentials)
-    print(f"Payload decodificado: {payload}")
     user_id = int(payload.get("sub"))
 
     # Comprobar si el servicio existe
@@ -1184,6 +1183,94 @@ async def rate_service(
         "rating": rating,
         "comment": comment
     }
+
+# Endpoint para añadir una valoración y comentario a una ruta
+# Uso: 
+"""
+  const _uri = "http://localhost:8000";
+  const handleEnviarValoracion = async (idx, reserva) => {
+    const token = Cookies.get("token");
+    const { rating, comment } = valoracions[idx] || {};
+    if (!rating || !comment) {
+      alert("Por favor, introduce una valoración y un comentario.");
+      return;
+    }
+    try {
+      const res = await fetch(`${_apiUrl}/api/route-rate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          scheduled_time: reserva.scheduled_time,
+          rating: parseInt(rating),
+          comment
+        })
+      });
+      if (res.ok) {
+        alert("Valoración añadida correctamente");
+      } else {
+        const err = await res.json();
+        alert("Error al enviar valoración: " + (err.detail || res.statusText));
+      }
+    } catch (err) {
+      alert("Error en el servidor: " + err.message);
+    }
+"""
+@app.post("/api/route-rate")
+async def rate_route(
+    scheduled_time: str = Body(...),  # formato ISO
+    rating: int = Body(...),
+    comment: str = Body(...),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db = Depends(get_mongo_db)
+):
+    """
+    Añade una valoración y comentario a una ruta de MongoDB.
+    """
+    # Obtener user_id desde el token
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    try:
+        # Convertir la fecha a datetime
+        sched_dt = datetime.fromisoformat(scheduled_time)
+    except Exception:
+        raise HTTPException(400, "scheduled_time debe ser un string ISO válido")
+
+    # Buscar la ruta
+    route = await db["route"].find_one({
+        "user_id": user_id,
+        "scheduled_time": sched_dt
+    })
+    if not route:
+        raise HTTPException(404, "Ruta no encontrada")
+
+    # Actualizar la ruta con los nuevos campos
+    result = await db["route"].update_one(
+        {"_id": route["_id"]},
+        {"$set": {"valoracion": rating, "comentario": comment}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(500, "No se pudo actualizar la ruta")
+
+    return {"message": "Valoración añadida correctamente"}
+
+# Endpoint para obtener las reservas de un usuario
+@app.get("/api/user-reserves")
+async def get_user_reserves(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    """
+    Devuelve todas las reservas (rutas) de un usuario autenticado (por su token).
+    """
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+    cursor = db["route"].find({"user_id": user_id})
+    reservas = [serialize_mongo_doc(doc) async for doc in cursor]
+    return {"reserves": reservas}
 
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
 async def connect_and_listen():
