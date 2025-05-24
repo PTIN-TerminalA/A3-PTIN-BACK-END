@@ -1,6 +1,6 @@
 # app/main.py
 
-from fastapi import FastAPI, HTTPException, Depends, Query, Body
+from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
@@ -312,7 +312,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
     if not services:
         raise HTTPException(status_code=404, detail="No s'han trobat serveis")
 
-    # Preparar el diccionario de servicios para la petición a la API de routing
+    # Preparar el diccionario de serveis per la petició a l'API de routing
     service_dict = {
         s.id: (float(s.location_x), float(s.location_y))
         for s in services
@@ -342,7 +342,7 @@ async def get_nearest_car(userLocation: LocationSchema):
     if not live_car_positions:
         raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
 
-    # Preparar el diccionario de coches para la petición a la API de routing
+    # Preparar el diccionario de coches per la petició a l'API de routing
     car_dict = {
         c._id: (float(c.location_x), float(c.location_y))
         for c in live_car_positions
@@ -523,7 +523,7 @@ async def create_route_app(
 
     # 9) Devolver respuesta con car_id
     return {
-        "message": "Reserva (desde app) confirmada con éxito.",
+        "message": "Reserva (desde app) confirmada amb èxit.",
         "data": serialize_mongo_doc(inserted),
         "car_id": str(car_id)
     }
@@ -1028,10 +1028,167 @@ from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
 
+# Endpoint para obtener el id de un servicio dado su nombre
+# Uso: /api/service-id?name="nombredelservicio"
+# Devuelve: {id: 123}
+# Ej: curl "http://localhost:8000/api/service-id?name=ZARA"
+# {"detail":"Servicio no encontrado"}
+# curl "http://localhost:8000/api/service-id?name=Haribo"
+# {"id":1}
+@app.get("/api/service-id")
+async def get_service_id(name: str, db: Session = Depends(get_db)):
+    """
+    Endpoint para obtener el ID de un servicio dado su nombre.
+    Devuelve un objeto con el ID del servicio.
+    """
+    try:
+        print(f"Buscando ID del servicio con nombre: {name}")
+
+        # Consultar la base de datos para obtener el ID del servicio
+        service = db.execute(
+            text("SELECT id FROM service WHERE LOWER(name) = LOWER(:name)"),
+            {"name": name}
+        ).fetchone()
+
+        print(f"Resultado de la consulta: {service}")
+
+        if not service:
+            print("Servicio no encontrado")
+            raise HTTPException(status_code=404, detail="Servicio no encontrado")
+
+        print(f"ID encontrado: {service[0]}")
+
+        return {"id": service[0]}
+
+    except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP para que sean manejadas correctamente
+        raise http_exc
+    except Exception as e:
+        # Manejar errores generales
+        print(f"Error al consultar la base de datos: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
+
+# Endpoint para obtener todas las valoraciones de un servicio
+# Uso: /api/service-ratings?service_id=1
+# Devuelve: { "service_id": 1, "ratings": [{"rating": 5, "comment": "Excelente servicio."}, ...] }
+@app.get("/api/service-ratings")
+async def get_service_ratings(service_id: int, db: Session = Depends(get_db)):
+    """
+    Endpoint para obtener todas las valoraciones de un servicio dado su ID.
+    Devuelve una lista de valoraciones con puntuación y comentario.
+    """
+    # Comprobar si el servicio existe
+    service = db.query(Service).filter(Service.id == service_id).first()
+    if not service:
+        print(f"Servicio con ID {service_id} no encontrado.")
+        raise HTTPException(status_code=404, detail="Servei no trobat.")
+
+    # Obtener las valoraciones del servicio
+    ratings = db.query(Valoration).filter(Valoration.service_id == service_id).all()
+    if not ratings:
+        print(f"No se encontraron valoraciones para el servicio con ID {service_id}.")
+        raise HTTPException(status_code=404, detail="No s'han trobat valoracions per aquest servei.")
+
+    # Formatear las valoraciones
+    response = [
+        {"rating": rating.value, "comment": rating.description}
+        for rating in ratings
+    ]
+    return {"service_id": service_id, "ratings": response}
+
+# Endoint para hacer una valoracion de un servicio
+# Uso: 
+""" 
+  const _uri = "http://localhost:8000";
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const token = Cookies.get("token");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('service_id', serviceId);
+      formData.append('rating', rating);
+      formData.append('comment', comment);
+      const res = await fetch(`${_uri}/api/rate-service`, {
+        method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      if (!res.ok) throw new Error("Error enviant la valoració");
+      setLoading(false);
+      if (onSuccess) onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+"""
+@app.post("/api/rate-service")
+async def rate_service(
+    service_id: int = Form(...),
+    rating: float = Form(...),
+    comment: str = Form(None),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para valorar un servicio.
+    - service_id: ID del servicio a valorar.
+    - rating: Valoración del servicio (0.01 - 9.99).
+    - comment: Comentario opcional sobre el servicio.
+    """
+    if rating < 0.01 or rating > 9.99:
+        raise HTTPException(status_code=400, detail="La valoració ha de ser entre 0.01 i 9.99.")
+
+    # Decodificar el token para obtener el user_id
+    payload = decode_access_token(creds.credentials)
+    print(f"Payload decodificado: {payload}")
+    user_id = int(payload.get("sub"))
+
+    # Comprobar si el servicio existe
+    service = db.query(Service).filter(Service.id == service_id).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Servei no trobat.")
+
+    # Comprobar si el usuario ya ha valorado este servicio
+    existing_rating = db.query(Valoration).filter(
+        Valoration.service_id == service_id,
+        Valoration.user_id == user_id
+    ).first()
+    if existing_rating:
+        raise HTTPException(status_code=400, detail="Ja has valorat aquest servei.")
+
+    # Crear la valoración
+    new_rating = Valoration(
+        service_id=service_id,
+        user_id=user_id,
+        value=rating,
+        description=comment
+    )
+    db.add(new_rating)
+    db.commit()
+
+    return {
+        "message": "Valoració afegida correctament",
+        "service_id": service_id,
+        "user_id": user_id,
+        "rating": rating,
+        "comment": comment
+    }
+
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
 async def connect_and_listen():
     uri = "ws://192.168.10.11:8766"
-    print(f"Intentando conectar a WebSocket en {uri}")
+    #print(f"Intentando conectar a WebSocket en {uri}")
     while True:
         try:
             async with websockets.connect(uri) as websocket:
@@ -1049,7 +1206,7 @@ async def connect_and_listen():
                     #    live_car_positions[car_id] = (float(x), float(y))
 
         except Exception as e:
-            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
+            #print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
             await asyncio.sleep(5)
             
             
