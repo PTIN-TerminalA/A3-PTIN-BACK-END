@@ -530,6 +530,65 @@ async def create_route_app(
 
 
 
+@app.post("/inicia-trajecte")
+async def inicia_trajecte(
+    destination: dict,  # debe contener {"x": float, "y": float}
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    # 1) Obtener user_id desde el token
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    # 2) Obtener la última reserva del usuario (la más reciente)
+    last_route = await db["route"].find_one(
+        {"user_id": user_id},
+        sort=[("scheduled_time", -1)]  # orden descendente
+    )
+    if not last_route:
+        raise HTTPException(404, "No s'ha trobat cap reserva activa per aquest usuari.")
+
+    car_id = last_route.get("car_id")
+    if not car_id:
+        raise HTTPException(500, "Reserva sense cotxe assignat.")
+
+    # 3) Llamar al endpoint PUT /cotxe/{cotxe_id}/en_curs para actualizar el estado del cotxe
+    try:
+        async with httpx.AsyncClient() as client:
+            put_response = await client.put(
+                f"http://192.168.10.10:8000/cotxe/{car_id}/en_curs",  # Ajusta host/puerto si es necesario
+                timeout=5.0
+            )
+            put_response.raise_for_status()
+    except Exception as e:
+        raise HTTPException(500, f"No s'ha pogut posar el cotxe en estat 'En curs': {str(e)}")
+
+    # 4) Llamar al controller para enviar el cotxe a la destinación
+    try:
+        x = destination.get("x")
+        y = destination.get("y")
+        if x is None or y is None:
+            raise HTTPException(400, "Cal proporcionar les coordenades 'x' i 'y' de la destinació.")
+
+        async with httpx.AsyncClient() as client:
+            controller_response = await client.post(
+                "http://controller/demana-cotxe",
+                json={"x": x, "y": y},
+                timeout=5.0
+            )
+            controller_response.raise_for_status()
+    except Exception as e:
+        raise HTTPException(500, f"Error en contactar amb el controlador: {str(e)}")
+
+    return {
+        "message": "Trajecte iniciat correctament.",
+        "car_id": str(car_id),
+        "destinacio": {"x": x, "y": y}
+    }
+
+
+
+
 
 # --- POST /reserves/usuari (reservacotxe) ---
 @app.post("/reserves/usuari")
@@ -1054,3 +1113,30 @@ async def connect_and_listen():
             
             
 #-------------------------Endpoints localizacion e IA-----------------------------------
+
+#para la app
+
+@app.get("/cotxe/{cotxe_id}/status")
+async def get_car_status(
+    cotxe_id: str,
+    db=Depends(get_mongo_db)
+):
+    # 1) Obtener posición desde el diccionario global
+    pos = live_car_positions.get(cotxe_id)
+    if pos is None:
+        raise HTTPException(status_code=404, detail=f"No s'ha trobat la posició del cotxe {cotxe_id}")
+
+    # 2) Obtener estado desde MongoDB
+    car_doc = await db["car"].find_one({"_id": ObjectId(cotxe_id)}, {"state": 1})
+    if not car_doc:
+        raise HTTPException(status_code=404, detail=f"No s'ha trobat el cotxe {cotxe_id} a la BDD")
+
+    # 3) Devolver resultado
+    return {
+        "car_id": cotxe_id,
+        "position": {
+            "x": pos[0],
+            "y": pos[1]
+        },
+        "state": car_doc["state"]
+    }
