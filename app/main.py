@@ -288,7 +288,7 @@ async def getValoration(service_id: int, db: Session = Depends(get_db)):
 #Aquest endpoint ens retorna la posició d'un usuari donat un payload de mesures wifi
 @app.post("/api/getUserPosition")
 async def getUserPosition(payload: WifiMeasuresList):
-    ai_url = "http://127.0.0.1:8080/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
+    ai_url = "http://10.60.0.3:2222/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
 
     try:
         async with httpx.AsyncClient() as client:
@@ -325,7 +325,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
+            response = await client.post("http://10.60.0.3:2222/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -355,7 +355,7 @@ async def get_nearest_car(userLocation: LocationSchema):
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
+            response = await client.post("http://10.60.0.3:2222/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -572,7 +572,7 @@ async def inicia_trajecte(
 
         async with httpx.AsyncClient() as client:
             controller_response = await client.post(
-                "http://controller/demana-cotxe",
+                "http://192.168.10.11/demana-cotxe",
                 json={"x": x, "y": y},
                 timeout=5.0
             )
@@ -660,7 +660,7 @@ async def create_route_user(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://controller/demana-cotxe",  # Ajusta esta URL según tu configuración
+                "http://192.168.10.11/demana-cotxe",  # Ajusta esta URL según tu configuración
                 json={"x": x_coord, "y": y_coord},
                 timeout=5.0
             )
@@ -951,7 +951,7 @@ async def get_shortest_path(payload: dict = Body(...)):
     try:
         # Realizar la petición a la API externa
         response = requests.post(
-            "http://127.0.0.1:9000/path",
+            "http://10.60.0.3:3333/path",
             json=payload,
             headers={"Content-Type": "application/json"}
         )
