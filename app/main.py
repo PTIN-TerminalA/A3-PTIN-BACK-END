@@ -325,7 +325,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://10.60.0.3:2222/getNearest", json=payload)
+            response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -355,7 +355,7 @@ async def get_nearest_car(userLocation: LocationSchema):
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://10.60.0.3:2222/getNearest", json=payload)
+            response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -572,7 +572,7 @@ async def inicia_trajecte(
 
         async with httpx.AsyncClient() as client:
             controller_response = await client.post(
-                "http://192.168.10.11/demana-cotxe",
+                "http://192.168.10.11:8767/demana-cotxe",
                 json={"x": x, "y": y},
                 timeout=5.0
             )
@@ -660,7 +660,7 @@ async def create_route_user(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://192.168.10.11/demana-cotxe",  # Ajusta esta URL según tu configuración
+                "http://192.168.10.11:8767/demana-cotxe",  # Ajusta esta URL según tu configuración
                 json={"x": x_coord, "y": y_coord},
                 timeout=5.0
             )
@@ -951,7 +951,7 @@ async def get_shortest_path(payload: dict = Body(...)):
     try:
         # Realizar la petición a la API externa
         response = requests.post(
-            "http://10.60.0.3:3333/path",
+            "http://10.60.0.3:1111/path",
             json=payload,
             headers={"Content-Type": "application/json"}
         )
