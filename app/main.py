@@ -16,6 +16,8 @@ import httpx
 import asyncio
 import websockets
 import json
+import threading
+from fastapi import WebSocket, WebSocketDisconnect
 
 
 # --- SQL imports ---
@@ -1272,29 +1274,39 @@ async def get_user_reserves(
     reservas = [serialize_mongo_doc(doc) async for doc in cursor]
     return {"reserves": reservas}
 
+# WebSocket para recibir actualizaciones de posición de coches
+# Lista de websockets conectados
+connected_websockets = set()
+
+@app.websocket("/ws/cars")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    connected_websockets.add(websocket)
+    try:
+        while True:
+            # Espera mensajes del cliente (opcional, aquí solo hacemos broadcast)
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        connected_websockets.remove(websocket)
+
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
 async def connect_and_listen():
     uri = "ws://192.168.10.11:8766"
-    #print(f"Intentando conectar a WebSocket en {uri}")
     while True:
         try:
             async with websockets.connect(uri) as websocket:
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
                     data = json.loads(message)
-                    print("📨 Mensaje recibido:", data)
-                    # Aquí puedes procesar el mensaje, guardarlo en base de datos, emitirlo, etc.
-                    
-                    #codi provisional per rebre dades del cotxe i introduïrles al array live_car_positions
-                    #car_id = data.get("id")
-                    #x = data.get("x")
-                    #y = data.get("y")
-                    #if car_id is not None and x is not None and y is not None:
-                    #    live_car_positions[car_id] = (float(x), float(y))
-
+                    # print("📨 Mensaje recibido:", data)
+                    # Broadcast a todos los clientes conectados
+                    to_remove = set()
+                    for ws in connected_websockets:
+                        try:
+                            await ws.send_json(data)
+                        except Exception:
+                            to_remove.add(ws)
+                    connected_websockets.difference_update(to_remove)
         except Exception as e:
-            #print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
             await asyncio.sleep(5)
-            
-            
 #-------------------------Endpoints localizacion e IA-----------------------------------
