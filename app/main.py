@@ -395,7 +395,7 @@ async def read_root():
     return {"message": "Welcome to the API amb SQL i Mongo!"}
 
 # --- GET /reserves ---
-@app.get("/reserves")
+@app.get("/api/reserves")
 async def list_reserves(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db_mongo = Depends(get_mongo_db),
@@ -446,7 +446,7 @@ async def list_reserves(
 
 
 # --- POST /reserves/app (reservas desde app móvil, con scheduled_time automático y estado fijo) ---
-@app.post("/reserves/app")
+@app.post("/api/reserves/app")
 async def create_route_app(
     payload: dict = Body(...),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -539,7 +539,7 @@ async def create_route_app(
 
 
 
-@app.post("/inicia-trajecte")
+@app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
     destination: dict,  # debe contener {"x": float, "y": float}
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -600,7 +600,7 @@ async def inicia_trajecte(
 
 
 # --- POST /reserves/usuari (reservacotxe) ---
-@app.post("/reserves/usuari")
+@app.post("/api/reserves/usuari")
 async def create_route_user(
     route: Route,
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -688,7 +688,7 @@ async def create_route_user(
 
 
 # --- POST /reserves/programada (gestioReserves) ---
-@app.post("/reserves/programada")
+@app.post("/api/reserves/programada")
 async def create_route_admin(
     payload: dict = Body(...),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -761,7 +761,7 @@ async def create_route_admin(
     }
 
 # --- PATCH /reserves/{reserve_id} ---
-@app.patch("/reserves/{reserve_id}")
+@app.patch("/api/reserves/{reserve_id}")
 async def update_route(
     reserve_id: str = Path(...),
     payload: dict = Body(...),
@@ -789,7 +789,7 @@ async def update_route(
 
 
 
-@app.delete("/reserves/{reserve_id}")
+@app.delete("/api/reserves/{reserve_id}")
 async def delete_reserve(
     reserve_id: str = Path(..., description="ID de la reserva a eliminar"),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
