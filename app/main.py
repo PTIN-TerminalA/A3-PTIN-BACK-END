@@ -49,6 +49,15 @@ async def startup_event():
 
 
 # 🔓 CORS (permitir React en :5173)
+#ho permetem de moment a tot arreu
+"""app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software", "flysy.software/"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)"""
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
