@@ -60,7 +60,7 @@ async def startup_event():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software", "flysy.software/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -725,7 +725,7 @@ async def create_route_admin(
         raise HTTPException(400, "scheduled_time ha de ser ISODate o ISO string")
 
     # 5) Construir documento en orden fijo
-    doc = {
+    doc = {api/
         "user_id":        user_id,
         "start_location": payload["start_location"],
         "end_location":   payload["end_location"],
