@@ -581,7 +581,7 @@ async def inicia_trajecte(
 
         async with httpx.AsyncClient() as client:
             controller_response = await client.post(
-                "http://192.168.10.11:8767/demana-cotxe",
+                "http://192.168.10.11:8767/controller/demana-cotxe",
                 json={"x": x, "y": y},
                 timeout=5.0
             )
@@ -669,7 +669,7 @@ async def create_route_user(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://192.168.10.11:8767/demana-cotxe",  # Ajusta esta URL según tu configuración
+                "http://192.168.10.11:8767/controller/demana-cotxe",  # Ajusta esta URL según tu configuración
                 json={"x": x_coord, "y": y_coord},
                 timeout=5.0
             )
