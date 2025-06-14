@@ -237,6 +237,80 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
         return {"user_type": str("non-assigned")}
 
 
+#Aquest endpoint esborra l'admin amb id = admin_id
+@app.delete("/api/admins/{admin_id}/full")
+async def delete_admin_full(admin_id: int, db: Session = Depends(get_db)):
+    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    user = db.query(User).filter(User.id == admin_id).first()
+
+    if not admin and not user:
+        raise HTTPException(404, "Admin o usuari no trobat")
+
+    if admin:
+        db.delete(admin)
+    if user:
+        db.delete(user)
+    
+    db.commit()
+    return {"message": "Admin i usuari eliminats correctament"}
+
+@app.get("/api/admins")
+async def list_admins(db: Session = Depends(get_db)):
+    admins = db.query(Admin).all()
+    result = []
+    for admin in admins:
+        user = db.query(User).filter(User.id == admin.id).first()
+        result.append({
+            "id": admin.id,
+            "superadmin": admin.superadmin,
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "dni": user.dni
+            } if user else None
+        })
+    return result
+
+
+#Aquest endpoint ens reotrna la info de l'admin amb id = admin_id
+@app.get("/api/admins/{admin_id}")
+async def get_admin_details(admin_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == admin_id).first()
+    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+
+    if not user or not admin:
+        raise HTTPException(404, "Admin no trobat")
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "dni": user.dni,
+    }
+
+@app.get("/api/admins/search")
+async def search_admins_by_name(apellido: str, db: Session = Depends(get_db)):
+    results = (
+        db.query(Admin)
+        .join(User, Admin.id == User.id)
+        .filter(User.name.ilike(f"%{apellido}%"))
+        .all()
+    )
+
+    data = []
+    for admin in results:
+        user = db.query(User).filter(User.id == admin.id).first()
+        data.append({
+            "id": admin.id,
+            "user": {
+                "name": user.name,
+                "email": user.email,
+                "dni": user.dni
+            }
+        })
+    return data
+
 #Aquest endpoint ens reotrna la llista de serveis disponibles
 @app.get("/api/getServices",response_model=List[ServiceSchema])
 async def getServices(db: Session = Depends(get_db)):
@@ -1096,7 +1170,8 @@ from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
 
-# 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
+live_car_positions_and_state = {}
+
 async def connect_and_listen():
     uri = "ws://192.168.10.11:8766"
     print(f"Intentando conectar a WebSocket en {uri}")
@@ -1107,20 +1182,22 @@ async def connect_and_listen():
                 async for message in websocket:
                     data = json.loads(message)
                     print("📨 Mensaje recibido:", data)
-                    # Aquí puedes procesar el mensaje, guardarlo en base de datos, emitirlo, etc.
-                    
-                    #codi provisional per rebre dades del cotxe i introduïrles al array live_car_positions
-                    #car_id = data.get("id")
-                    #x = data.get("x")
-                    #y = data.get("y")
-                    #if car_id is not None and x is not None and y is not None:
-                    #    live_car_positions[car_id] = (float(x), float(y))
+
+                    car_id = str(data.get("id"))  # Convierte a string por consistencia
+                    coords = data.get("coordinates", {})
+                    state = str(data.get("state"))
+                    x = coords.get("x")
+                    y = coords.get("y")
+
+                    if car_id and x is not None and y is not None and state is not None:
+                        live_car_positions_and_state[car_id] = (float(x), float(y), state)
+                        print(f"🚗 Posición guardada: {car_id} -> ({x}, {y})")
+                    else:
+                        print(f"⚠️ Datos incompletos en mensaje: {data}")
 
         except Exception as e:
             print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
-            await asyncio.sleep(5)
-            
-            
+            await asyncio.sleep(5)    
 #-------------------------Endpoints localizacion e IA-----------------------------------
 
 #para la app
@@ -1131,14 +1208,15 @@ async def get_car_status(
     db=Depends(get_mongo_db)
 ):
     # 1) Obtener posición desde el diccionario global
-    pos = live_car_positions.get(cotxe_id)
+    pos = live_car_positions_and_state.get(cotxe_id)
     if pos is None:
         raise HTTPException(status_code=404, detail=f"No s'ha trobat la posició del cotxe {cotxe_id}")
 
     # 2) Obtener estado desde MongoDB
-    car_doc = await db["car"].find_one({"_id": ObjectId(cotxe_id)}, {"state": 1})
-    if not car_doc:
-        raise HTTPException(status_code=404, detail=f"No s'ha trobat el cotxe {cotxe_id} a la BDD")
+    #car_doc = await db["car"].find_one({"_id": cotxe_id}, {"state": "stopped"})
+
+    #if not car_doc:
+    #    raise HTTPException(status_code=404, detail=f"No s'ha trobat el cotxe {cotxe_id} a la BDD")
 
     # 3) Devolver resultado
     return {
@@ -1147,5 +1225,5 @@ async def get_car_status(
             "x": pos[0],
             "y": pos[1]
         },
-        "state": car_doc["state"]
+        "state": pos[2]
     }
