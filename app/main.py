@@ -894,7 +894,7 @@ async def get_shortest_path(payload: dict = Body(...)):
     try:
         # Realizar la petición a la API externa
         response = requests.post(
-            "http://127.0.0.1:9000/path",
+            "http://10.60.0.3:1111/path",
             json=payload,
             headers={"Content-Type": "application/json"}
         )
@@ -1278,6 +1278,16 @@ async def get_user_reserves(
 # Lista de websockets conectados
 connected_websockets = set()
 
+# Uso:
+# 1. Conectar al WebSocket: ws://localhost:8000/ws/cars
+# 2. Procesar mensaje con formato JSON:
+# {
+# 'id': 879467412, 
+# 'state': 'moving', 
+# 'checkup': {'collision': 'false', 'motherboard': 'TODO'},
+# 'coordinates': {'x': 0.4202597402597403, 'y': 0.10962767957878902}
+# }
+
 @app.websocket("/ws/cars")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -1298,7 +1308,7 @@ async def connect_and_listen():
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
                     data = json.loads(message)
-                    # print("📨 Mensaje recibido:", data)
+                    print("📨 Mensaje recibido:", data)
                     # Broadcast a todos los clientes conectados
                     to_remove = set()
                     for ws in connected_websockets:
