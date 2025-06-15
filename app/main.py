@@ -563,7 +563,15 @@ async def create_basic_route(
     target_y = float(service_obj.location_y)
 
     # 4) Llamada al controlador externo /controller/demana-cotxe
-    payload_ctrl = {"x": target_x, "y": target_y}
+    payload_ctrl = {
+    "x": target_x,
+    "y": target_y,
+    "desti": {
+        "x": target_x,
+        "y": target_y
+    }
+}
+
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
