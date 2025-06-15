@@ -743,22 +743,20 @@ async def inicia_trajecte(
 async def create_route_user(
     route: Route,
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db=Depends(get_mongo_db)
+    db=Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db)
 ):
     # 1) Obtener user_id desde token
     payload = decode_access_token(creds.credentials)
     user_id = int(payload.get("sub"))
 
-    # 2) Obtener coordenadas del punto de recogida
-    establishment = await db["establishment"].find_one(
-        {"name": route.start_location},
-        {"location_x": 1, "location_y": 1}
-    )
-    if not establishment:
-        raise HTTPException(400, f"No s'ha trobat l'establiment {route.start_location}")
-    
-    x_coord = establishment["location_x"]
-    y_coord = establishment["location_y"]
+    # 2) Obtener coordenadas del punto de recogida usando el endpoint existente
+    print(f"🔍 Buscando coordenadas para el punto de recogida: {route.start_location}")
+    start_location_resp = await get_establishment_position(route.start_location, db_sql)
+    print(f"📍 Coordenadas obtenidas: {start_location_resp}")
+    x_coord = start_location_resp["location_x"]
+    y_coord = start_location_resp["location_y"]
+    print(f"✅ Coordenadas asignadas: x={x_coord}, y={y_coord}")
 
     # 3) Buscar coche disponible y marcarlo ocupado
     car = await db["car"].find_one({"state": "Disponible"})
