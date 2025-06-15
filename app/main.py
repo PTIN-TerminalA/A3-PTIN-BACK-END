@@ -530,50 +530,64 @@ async def list_reserves(
 
 
 @app.post("/api/reserves/app-basic")
-async def create_basic_route(db_sql: Session = Depends(get_db)):
+async def create_basic_route(
+    payload: dict = Body(...),
+    db_sql: Session = Depends(get_db)
+):
     """
-    1) Usuario fijo en x=0.5, y=0.5.
-    2) Llamada a getNearestService para obtener servicio más cercano.
-    3) Recuperar coordenadas del servicio de SQL.
-    4) Llamar a /controller/demana-cotxe con esas coordenadas, incluyendo `desti`.
+    1) Recibe 'location' con x,y y 'end_location' (string).
+    2) Valida parámetros.
+    3) Busca en SQL las coordenadas del servicio end_location.
+    4) Llama a /controller/demana-cotxe con esas coordenadas.
+    5) Devuelve el status y data del controlador junto con la confirmación.
     """
-    # 1) Ubicación fija del usuario
-    user_location = LocationSchema(x=0.5, y=0.5)
+    # 1) Validar y extraer ubicación del usuario
+    loc = payload.get("location")
+    if not loc or not isinstance(loc, dict):
+        raise HTTPException(status_code=400, detail="Debes enviar 'location' con 'x' y 'y'.")
+    try:
+        user_location = LocationSchema(x=loc["x"], y=loc["y"])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato inválido para 'location'.")
 
-    # 2) Obtener servicio más cercano
-    nearest_resp = await getNearestService(user_location, db_sql)
-    service_id = nearest_resp.get("nearest_service_id")
-    if service_id is None:
-        raise HTTPException(status_code=500, detail="No se obtuvo servicio cercano.")
+    # 2) Validar end_location
+    end_loc = payload.get("end_location")
+    if not end_loc or not isinstance(end_loc, str):
+        raise HTTPException(status_code=400, detail="Debes enviar 'end_location' (string).")
 
-    # 3) Recuperar coordenadas del servicio
-    service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
+    # 3) Buscar servicio en base de datos por nombre
+    service_obj = db_sql.query(Service).filter(Service.name == end_loc).first()
     if not service_obj:
-        raise HTTPException(status_code=404, detail="Servicio no encontrado en base de datos.")
+        raise HTTPException(status_code=404, detail=f"Servicio '{end_loc}' no encontrado.")
     target_x = float(service_obj.location_x)
     target_y = float(service_obj.location_y)
 
-    # 4) Llamada al controlador externo
-    payload = {
-        "x": target_x,
-        "y": target_y,
-        "desti": {"x": target_x, "y": target_y}
-    }
+    # 4) Llamada al controlador externo /controller/demana-cotxe
+    payload_ctrl = {"x": target_x, "y": target_y}
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
-                json=payload,
+                json=payload_ctrl,
                 timeout=5.0
             )
-        # Intentar parsear respuesta
+        # Intentar parsear JSON o text
         try:
-            data = controller_resp.json()
+            ctrl_data = controller_resp.json()
         except ValueError:
-            data = controller_resp.text
-        return {"controller_status": controller_resp.status_code, "controller_data": data}
+            ctrl_data = controller_resp.text
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al llamar a controlador: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al llamar al controlador: {e}")
+
+    # 5) Respuesta final
+    return {
+        "message": "Llamada al controlador realizada correctamente.",
+        "received_location": {"x": user_location.x, "y": user_location.y},
+        "service_name": service_obj.name,
+        "service_location": {"x": target_x, "y": target_y},
+        "controller_status": controller_resp.status_code,
+        "controller_data": ctrl_data
+    }
 
 
 
