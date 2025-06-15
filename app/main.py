@@ -535,7 +535,7 @@ async def create_basic_route(db_sql: Session = Depends(get_db)):
     1) Usuario fijo en x=0.5, y=0.5.
     2) Llamada a getNearestService para obtener servicio más cercano.
     3) Recuperar coordenadas del servicio de SQL.
-    4) Llamar a /controller/demana-cotxe con esas coordenadas.
+    4) Llamar a /controller/demana-cotxe con esas coordenadas, incluyendo `desti`.
     """
     # 1) Ubicación fija del usuario
     user_location = LocationSchema(x=0.5, y=0.5)
@@ -554,11 +554,16 @@ async def create_basic_route(db_sql: Session = Depends(get_db)):
     target_y = float(service_obj.location_y)
 
     # 4) Llamada al controlador externo
+    payload = {
+        "x": target_x,
+        "y": target_y,
+        "desti": {"x": target_x, "y": target_y}
+    }
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
-                json={"x": target_x, "y": target_y},
+                json=payload,
                 timeout=5.0
             )
         # Intentar parsear respuesta
