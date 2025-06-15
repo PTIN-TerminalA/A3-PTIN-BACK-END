@@ -528,6 +528,66 @@ async def list_reserves(
 
 
 
+@app.post("/api/reserves/app-basic")
+async def create_basic_route(
+    db_mongo=Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db)
+):
+    # 1) Usuario fijo
+    user_id = 44
+
+    # 2) Ubicación fija del usuario
+    user_location = LocationSchema(x=0.5, y=0.5)
+
+    # 3) Servicio más cercano
+    nearest_resp = await getNearestService(user_location, db_sql)
+    service_id = nearest_resp.get("nearest_service_id")
+    service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
+    start_location = service_obj.name
+
+    # 4) Destino fijo "Lindt"
+    end_location = "Lindt"
+
+    # 5) Coordenadas del servicio Lindt
+    lindt = db_sql.query(Service).filter(Service.name == end_location).first()
+    target_x, target_y = lindt.x, lindt.y
+
+    # 6) Marcar coche Disponible → Solicitado
+    car = await db_mongo["car"].find_one({"state": "Disponible"})
+    await db_mongo["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Solicitat"}})
+    car_id = car["_id"]
+
+    # 7) Crear reserva en Mongo
+    new_route = {
+        "user_id": user_id,
+        "start_location": start_location,
+        "end_location": end_location,
+        "scheduled_time": datetime.utcnow(),
+        "state": "En curs",
+        "car_id": car_id
+    }
+    res = await db_mongo["route"].insert_one(new_route)
+    inserted = await db_mongo["route"].find_one({"_id": res.inserted_id})
+
+    # 8) Llamar al controlador con coords de Lindt
+    async with httpx.AsyncClient() as client:
+        controller_resp = await client.post(
+            "http://192.168.10.11:8767/controller/demana-cotxe",
+            json={"x": target_x, "y": target_y},
+            timeout=5.0
+        )
+
+    return {
+        "message": "Reserva básica creada y coche solicitado.",
+        "data": serialize_mongo_doc(inserted),
+        "car_id": str(car_id),
+        "controller_status": controller_resp.status_code
+    }
+
+
+
+
+
 # --- POST /reserves/app (reservas desde app móvil, con scheduled_time automático y estado fijo) ---
 @app.post("/api/reserves/app")
 async def create_route_app(
