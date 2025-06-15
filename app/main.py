@@ -528,6 +528,18 @@ async def list_reserves(
 
 
 
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+import httpx
+from datetime import datetime
+
+from app.schemas import LocationSchema
+from app.models import Service
+from app.database import get_mongo_db, get_db
+from app.utils import getNearestService, serialize_mongo_doc
+
+app = FastAPI()
+
 @app.post("/api/reserves/app-basic")
 async def create_basic_route(
     db_mongo=Depends(get_mongo_db),
@@ -542,18 +554,26 @@ async def create_basic_route(
     # 3) Servicio más cercano
     nearest_resp = await getNearestService(user_location, db_sql)
     service_id = nearest_resp.get("nearest_service_id")
+    if service_id is None:
+        raise HTTPException(status_code=500, detail="No se pudo obtener servicio cercano.")
     service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
+    if not service_obj:
+        raise HTTPException(status_code=404, detail="Servicio cercano no encontrado.")
     start_location = service_obj.name
 
     # 4) Destino fijo "Lindt"
     end_location = "Lindt"
 
     # 5) Coordenadas del servicio Lindt
-    lindt = db_sql.query(Service).filter(Service.name == end_location).first()
-    target_x, target_y = lindt.x, lindt.y
+    lindt_service = db_sql.query(Service).filter(Service.name == end_location).first()
+    if not lindt_service:
+        raise HTTPException(status_code=404, detail="Servicio Lindt no encontrado.")
+    target_x, target_y = lindt_service.x, lindt_service.y
 
-    # 6) Marcar coche Disponible → Solicitado
+    # 6) Marcar coche como "Solicitat"
     car = await db_mongo["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(status_code=400, detail="No hay coches disponibles.")
     await db_mongo["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Solicitat"}})
     car_id = car["_id"]
 
@@ -566,23 +586,34 @@ async def create_basic_route(
         "state": "En curs",
         "car_id": car_id
     }
-    res = await db_mongo["route"].insert_one(new_route)
-    inserted = await db_mongo["route"].find_one({"_id": res.inserted_id})
+    result = await db_mongo["route"].insert_one(new_route)
+    inserted = await db_mongo["route"].find_one({"_id": result.inserted_id})
+    if not inserted:
+        raise HTTPException(status_code=500, detail="No se pudo crear la reserva.")
 
-    # 8) Llamar al controlador con coords de Lindt
-    async with httpx.AsyncClient() as client:
-        controller_resp = await client.post(
-            "http://192.168.10.11:8767/controller/demana-cotxe",
-            json={"x": target_x, "y": target_y},
-            timeout=5.0
-        )
+    # 8) Llamada al controlador externo con manejo de errores
+    try:
+        async with httpx.AsyncClient() as client:
+            controller_resp = await client.post(
+                "http://192.168.10.11:8767/controller/demana-cotxe",
+                json={"x": target_x, "y": target_y},
+                timeout=5.0
+            )
+        status = controller_resp.status_code
+        detail = controller_resp.text
+    except Exception as e:
+        status = None
+        detail = str(e)
 
+    # 9) Respuesta
     return {
         "message": "Reserva básica creada y coche solicitado.",
         "data": serialize_mongo_doc(inserted),
         "car_id": str(car_id),
-        "controller_status": controller_resp.status_code
+        "controller_status": status,
+        "controller_detail": detail
     }
+
 
 
 
