@@ -614,8 +614,8 @@ async def create_route_app(
     )
 
     async with httpx.AsyncClient() as client:
+        print("estoy llamando a demana-cotxe con loc: " + str(user_location.x) + " y " + str(user_location.y))
         controller_response = await client.post(
-            print("estoy llamando a demana-cotxe con loc: " + str(user_location.x) + " y " + str(user_location.y)),
             "http://192.168.10.11:8767/controller/demana-cotxe",
             json={"x": user_location.x, "y": user_location.y},
             timeout=5.0
