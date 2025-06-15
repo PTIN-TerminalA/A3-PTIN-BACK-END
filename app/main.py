@@ -47,7 +47,9 @@ app = FastAPI()
 
 @app.on_event("startup")
 async def startup_event():
+    asyncio.create_task(connect_and_listen())
     asyncio.create_task(connect_and_listen_cars())
+    
 
 
 # 🔓 CORS (permitir React en :5173)
