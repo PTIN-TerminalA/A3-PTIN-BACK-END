@@ -1021,7 +1021,9 @@ async def get_profile(
     # 2) Datos de Regular
     regular: Regular = db.query(Regular).filter(Regular.id == user_id).first()
     if not regular:
-        raise HTTPException(404, "Dades regular no trobades")
+        admin: Admin = db.query(Admin).filter(Admin.id == user_id).first()
+        if not admin:
+            raise HTTPException(404, "Usuari no té dades regulars ni és administrador")
 
     return {
         "name": user.name,
