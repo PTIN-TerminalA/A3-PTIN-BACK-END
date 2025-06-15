@@ -532,6 +532,7 @@ async def list_reserves(
 @app.post("/api/reserves/app-basic")
 async def create_basic_route(
     payload: dict = Body(...),
+    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_sql: Session = Depends(get_db),
     db_mongo=Depends(get_mongo_db)
 ):
@@ -542,9 +543,17 @@ async def create_basic_route(
 
     1) Obtiene el servicio más cercano para ubicación del payload.
     2) Recupera sus coordenadas y llama a /controller/demana-cotxe.
-    3) Crea la reserva en MongoDB con user_id=44.
+    3) Crea la reserva en MongoDB con user_id.
     4) Devuelve estado del controlador y datos de la reserva.
     """
+    
+    # # Autenticación por token (comentado por ahora)
+    # payload_token = decode_access_token(creds.credentials)
+    # user_id = int(payload_token.get("sub"))
+    
+    # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
+    user_id = 44
+    
     # 1) Validar y extraer ubicación del usuario
     loc = payload.get("location")
     if not loc or not isinstance(loc, dict):
@@ -588,7 +597,7 @@ async def create_basic_route(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al llamar al controlador: {e}")
 
-    # 6) Crear la reserva en MongoDB (usuario 44)
+    # 6) Crear la reserva en MongoDB
     # Buscar coche disponible y marcarlo "Solicitat"
     car = await db_mongo["car"].find_one({"state": "Disponible"})
     if not car:
@@ -597,7 +606,7 @@ async def create_basic_route(
     car_id = car["_id"]
 
     new_route = {
-        "user_id": 44,
+        "user_id": user_id,  # Ahora usa la variable user_id
         "start_location": service_obj.name,
         "end_location": end_loc,
         "scheduled_time": datetime.utcnow(),
@@ -611,8 +620,8 @@ async def create_basic_route(
 
     # 7) Actualizar historial del usuario
     await db_mongo["user"].update_one(
-        {"id": 44},
-        {"$push": {"route_history": inserted}, "$setOnInsert": {"id": 44}},
+        {"id": user_id},  # Ahora usa la variable user_id
+        {"$push": {"route_history": inserted}, "$setOnInsert": {"id": user_id}},  # Aquí también
         upsert=True
     )
 
@@ -733,10 +742,16 @@ async def create_route_app(
 
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
+    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
     try:
+        # # Autenticación por token (comentado por ahora)
+        # payload_token = decode_access_token(creds.credentials)
+        # user_id = int(payload_token.get("sub"))
+        
+        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
         user_id = 44
 
         last_route = await db_mongo["route"].find_one(
