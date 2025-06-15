@@ -1512,7 +1512,7 @@ connected_websockets = set()
 # 'coordinates': {'x': 0.4202597402597403, 'y': 0.10962767957878902}
 # }
 
-@app.websocket("/api/ws/cars")
+@app.websocket("/api/cars")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_websockets.add(websocket)
