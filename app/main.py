@@ -619,7 +619,7 @@ async def create_route_app(
             "http://192.168.10.11:8767/controller/demana-cotxe",
             json={"x": user_location.x, "y": user_location.y},
             timeout=5.0
-    )
+)
 
     # 9) Devolver respuesta con car_id
     return {
