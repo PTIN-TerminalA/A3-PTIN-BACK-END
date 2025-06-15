@@ -47,7 +47,7 @@ app = FastAPI()
 
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(connect_and_listen())
+    asyncio.create_task(connect_and_listen_cars())
 
 
 # 🔓 CORS (permitir React en :5173)
@@ -1300,7 +1300,7 @@ async def websocket_endpoint(websocket: WebSocket):
         connected_websockets.remove(websocket)
 
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
-async def connect_and_listen():
+async def connect_and_listen_cars():
     uri = "ws://192.168.10.11:8766"
     while True:
         try:
@@ -1308,7 +1308,7 @@ async def connect_and_listen():
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
                     data = json.loads(message)
-                    print("📨 Mensaje recibido:", data)
+                    #print("📨 Mensaje recibido:", data)
                     # Broadcast a todos los clientes conectados
                     to_remove = set()
                     for ws in connected_websockets:
