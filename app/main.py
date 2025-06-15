@@ -1,6 +1,5 @@
 # app/main.py
-
-from fastapi import FastAPI, HTTPException, Depends, Query, Body
+from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
@@ -16,7 +15,8 @@ import httpx
 import asyncio
 import websockets
 import json
-
+import threading
+from fastapi import WebSocket, WebSocketDisconnect
 
 # --- SQL imports ---
 from app.database import get_db
@@ -46,21 +46,12 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(connect_and_listen())
-
-
+    asyncio.create_task(connect_and_listen_cars())
+    
 # 🔓 CORS (permitir React en :5173)
-#ho permetem de moment a tot arreu
-"""app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software", "flysy.software/"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)"""
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software", "flysy.software/"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -237,80 +228,6 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
         return {"user_type": str("non-assigned")}
 
 
-#Aquest endpoint esborra l'admin amb id = admin_id
-@app.delete("/api/admins/{admin_id}/full")
-async def delete_admin_full(admin_id: int, db: Session = Depends(get_db)):
-    admin = db.query(Admin).filter(Admin.id == admin_id).first()
-    user = db.query(User).filter(User.id == admin_id).first()
-
-    if not admin and not user:
-        raise HTTPException(404, "Admin o usuari no trobat")
-
-    if admin:
-        db.delete(admin)
-    if user:
-        db.delete(user)
-    
-    db.commit()
-    return {"message": "Admin i usuari eliminats correctament"}
-
-@app.get("/api/admins")
-async def list_admins(db: Session = Depends(get_db)):
-    admins = db.query(Admin).all()
-    result = []
-    for admin in admins:
-        user = db.query(User).filter(User.id == admin.id).first()
-        result.append({
-            "id": admin.id,
-            "superadmin": admin.superadmin,
-            "user": {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "dni": user.dni
-            } if user else None
-        })
-    return result
-
-
-#Aquest endpoint ens reotrna la info de l'admin amb id = admin_id
-@app.get("/api/admins/{admin_id}")
-async def get_admin_details(admin_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == admin_id).first()
-    admin = db.query(Admin).filter(Admin.id == admin_id).first()
-
-    if not user or not admin:
-        raise HTTPException(404, "Admin no trobat")
-
-    return {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "dni": user.dni,
-    }
-
-@app.get("/api/admins/search")
-async def search_admins_by_name(apellido: str, db: Session = Depends(get_db)):
-    results = (
-        db.query(Admin)
-        .join(User, Admin.id == User.id)
-        .filter(User.name.ilike(f"%{apellido}%"))
-        .all()
-    )
-
-    data = []
-    for admin in results:
-        user = db.query(User).filter(User.id == admin.id).first()
-        data.append({
-            "id": admin.id,
-            "user": {
-                "name": user.name,
-                "email": user.email,
-                "dni": user.dni
-            }
-        })
-    return data
-
 #Aquest endpoint ens reotrna la llista de serveis disponibles
 @app.get("/api/getServices",response_model=List[ServiceSchema])
 async def getServices(db: Session = Depends(get_db)):
@@ -371,7 +288,7 @@ async def getValoration(service_id: int, db: Session = Depends(get_db)):
 #Aquest endpoint ens retorna la posició d'un usuari donat un payload de mesures wifi
 @app.post("/api/getUserPosition")
 async def getUserPosition(payload: WifiMeasuresList):
-    ai_url = "http://10.60.0.3:2222/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
+    ai_url = "http://127.0.0.1:8080/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
 
     try:
         async with httpx.AsyncClient() as client:
@@ -395,7 +312,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
     if not services:
         raise HTTPException(status_code=404, detail="No s'han trobat serveis")
 
-    # Preparar el diccionario de servicios para la petición a la API de routing
+    # Preparar el diccionario de serveis per la petició a l'API de routing
     service_dict = {
         s.id: (float(s.location_x), float(s.location_y))
         for s in services
@@ -408,7 +325,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
+            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -425,7 +342,7 @@ async def get_nearest_car(userLocation: LocationSchema):
     if not live_car_positions:
         raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
 
-    # Preparar el diccionario de coches para la petición a la API de routing
+    # Preparar el diccionario de coches per la petició a l'API de routing
     car_dict = {
         c._id: (float(c.location_x), float(c.location_y))
         for c in live_car_positions
@@ -438,7 +355,7 @@ async def get_nearest_car(userLocation: LocationSchema):
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
+            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -469,7 +386,7 @@ async def read_root():
     return {"message": "Welcome to the API amb SQL i Mongo!"}
 
 # --- GET /reserves ---
-@app.get("/api/reserves")
+@app.get("/reserves")
 async def list_reserves(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db_mongo = Depends(get_mongo_db),
@@ -520,7 +437,7 @@ async def list_reserves(
 
 
 # --- POST /reserves/app (reservas desde app móvil, con scheduled_time automático y estado fijo) ---
-@app.post("/api/reserves/app")
+@app.post("/reserves/app")
 async def create_route_app(
     payload: dict = Body(...),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -606,75 +523,16 @@ async def create_route_app(
 
     # 9) Devolver respuesta con car_id
     return {
-        "message": "Reserva (desde app) confirmada con éxito.",
+        "message": "Reserva (desde app) confirmada amb èxit.",
         "data": serialize_mongo_doc(inserted),
         "car_id": str(car_id)
     }
 
 
 
-@app.post("/api/inicia-trajecte")
-async def inicia_trajecte(
-    destination: dict,  # debe contener {"x": float, "y": float}
-    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db=Depends(get_mongo_db)
-):
-    # 1) Obtener user_id desde el token
-    payload = decode_access_token(creds.credentials)
-    user_id = int(payload.get("sub"))
-
-    # 2) Obtener la última reserva del usuario (la más reciente)
-    last_route = await db["route"].find_one(
-        {"user_id": user_id},
-        sort=[("scheduled_time", -1)]  # orden descendente
-    )
-    if not last_route:
-        raise HTTPException(404, "No s'ha trobat cap reserva activa per aquest usuari.")
-
-    car_id = last_route.get("car_id")
-    if not car_id:
-        raise HTTPException(500, "Reserva sense cotxe assignat.")
-
-    # 3) Llamar al endpoint PUT /cotxe/{cotxe_id}/en_curs para actualizar el estado del cotxe
-    try:
-        async with httpx.AsyncClient() as client:
-            put_response = await client.put(
-                f"http://192.168.10.10:8000/cotxe/{car_id}/en_curs",  # Ajusta host/puerto si es necesario
-                timeout=5.0
-            )
-            put_response.raise_for_status()
-    except Exception as e:
-        raise HTTPException(500, f"No s'ha pogut posar el cotxe en estat 'En curs': {str(e)}")
-
-    # 4) Llamar al controller para enviar el cotxe a la destinación
-    try:
-        x = destination.get("x")
-        y = destination.get("y")
-        if x is None or y is None:
-            raise HTTPException(400, "Cal proporcionar les coordenades 'x' i 'y' de la destinació.")
-
-        async with httpx.AsyncClient() as client:
-            controller_response = await client.post(
-                "http://192.168.10.11:8767/controller/demana-cotxe",
-                json={"x": x, "y": y},
-                timeout=5.0
-            )
-            controller_response.raise_for_status()
-    except Exception as e:
-        raise HTTPException(500, f"Error en contactar amb el controlador: {str(e)}")
-
-    return {
-        "message": "Trajecte iniciat correctament.",
-        "car_id": str(car_id),
-        "destinacio": {"x": x, "y": y}
-    }
-
-
-
-
 
 # --- POST /reserves/usuari (reservacotxe) ---
-@app.post("/api/reserves/usuari")
+@app.post("/reserves/usuari")
 async def create_route_user(
     route: Route,
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -743,7 +601,7 @@ async def create_route_user(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://192.168.10.11:8767/controller/demana-cotxe",  # Ajusta esta URL según tu configuración
+                "http://controller/demana-cotxe",  # Ajusta esta URL según tu configuración
                 json={"x": x_coord, "y": y_coord},
                 timeout=5.0
             )
@@ -762,7 +620,7 @@ async def create_route_user(
 
 
 # --- POST /reserves/programada (gestioReserves) ---
-@app.post("/api/reserves/programada")
+@app.post("/reserves/programada")
 async def create_route_admin(
     payload: dict = Body(...),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -799,7 +657,7 @@ async def create_route_admin(
         raise HTTPException(400, "scheduled_time ha de ser ISODate o ISO string")
 
     # 5) Construir documento en orden fijo
-    doc = {api/
+    doc = {
         "user_id":        user_id,
         "start_location": payload["start_location"],
         "end_location":   payload["end_location"],
@@ -835,7 +693,7 @@ async def create_route_admin(
     }
 
 # --- PATCH /reserves/{reserve_id} ---
-@app.patch("/api/reserves/{reserve_id}")
+@app.patch("/reserves/{reserve_id}")
 async def update_route(
     reserve_id: str = Path(...),
     payload: dict = Body(...),
@@ -863,7 +721,7 @@ async def update_route(
 
 
 
-@app.delete("/api/reserves/{reserve_id}")
+@app.delete("/reserves/{reserve_id}")
 async def delete_reserve(
     reserve_id: str = Path(..., description="ID de la reserva a eliminar"),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -1258,3 +1116,294 @@ async def get_car_status(
         },
         "state": pos[2]
     }
+
+# Endpoint para obtener el id de un servicio dado su nombre
+# Uso: /api/service-id?name="nombredelservicio"
+# Devuelve: {id: 123}
+# Ej: curl "http://localhost:8000/api/service-id?name=ZARA"
+# {"detail":"Servicio no encontrado"}
+# curl "http://localhost:8000/api/service-id?name=Haribo"
+# {"id":1}
+@app.get("/api/service-id")
+async def get_service_id(name: str, db: Session = Depends(get_db)):
+    """
+    Endpoint para obtener el ID de un servicio dado su nombre.
+    Devuelve un objeto con el ID del servicio.
+    """
+    try:
+        print(f"Buscando ID del servicio con nombre: {name}")
+
+        # Consultar la base de datos para obtener el ID del servicio
+        service = db.execute(
+            text("SELECT id FROM service WHERE LOWER(name) = LOWER(:name)"),
+            {"name": name}
+        ).fetchone()
+
+        print(f"Resultado de la consulta: {service}")
+
+        if not service:
+            print("Servicio no encontrado")
+            raise HTTPException(status_code=404, detail="Servicio no encontrado")
+
+        print(f"ID encontrado: {service[0]}")
+
+        return {"id": service[0]}
+
+    except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP para que sean manejadas correctamente
+        raise http_exc
+    except Exception as e:
+        # Manejar errores generales
+        print(f"Error al consultar la base de datos: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor al consultar la base de datos")
+
+# Endpoint para obtener todas las valoraciones de un servicio
+# Uso: /api/service-ratings?service_id=1
+# Devuelve: { "service_id": 1, "ratings": [{"rating": 5, "comment": "Excelente servicio."}, ...] }
+@app.get("/api/service-ratings")
+async def get_service_ratings(service_id: int, db: Session = Depends(get_db)):
+    """
+    Endpoint para obtener todas las valoraciones de un servicio dado su ID.
+    Devuelve una lista de valoraciones con puntuación y comentario.
+    """
+    # Comprobar si el servicio existe
+    service = db.query(Service).filter(Service.id == service_id).first()
+    if not service:
+        print(f"Servicio con ID {service_id} no encontrado.")
+        raise HTTPException(status_code=404, detail="Servei no trobat.")
+
+    # Obtener las valoraciones del servicio
+    ratings = db.query(Valoration).filter(Valoration.service_id == service_id).all()
+    if not ratings:
+        print(f"No se encontraron valoraciones para el servicio con ID {service_id}.")
+        raise HTTPException(status_code=404, detail="No s'han trobat valoracions per aquest servei.")
+
+    # Formatear las valoraciones
+    response = [
+        {"rating": rating.value, "comment": rating.description}
+        for rating in ratings
+    ]
+    return {"service_id": service_id, "ratings": response}
+
+# Endoint para hacer una valoracion de un servicio
+# Uso: 
+""" 
+  const _uri = "http://localhost:8000";
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const token = Cookies.get("token");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('service_id', serviceId);
+      formData.append('rating', rating);
+      formData.append('comment', comment);
+      const res = await fetch(`${_uri}/api/rate-service`, {
+        method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      if (!res.ok) throw new Error("Error enviant la valoració");
+      setLoading(false);
+      if (onSuccess) onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+"""
+@app.post("/api/rate-service")
+async def rate_service(
+    service_id: int = Form(...),
+    rating: float = Form(...),
+    comment: str = Form(None),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para valorar un servicio.
+    - service_id: ID del servicio a valorar.
+    - rating: Valoración del servicio (0.01 - 5).
+    - comment: Comentario opcional sobre el servicio.
+    """
+    if rating < 0.01 or rating > 5:
+        raise HTTPException(status_code=400, detail="La valoració ha de ser entre 0.01 i 9.99.")
+
+    # Decodificar el token para obtener el user_id
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    # Comprobar si el servicio existe
+    service = db.query(Service).filter(Service.id == service_id).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Servei no trobat.")
+
+    # Comprobar si el usuario ya ha valorado este servicio
+    existing_rating = db.query(Valoration).filter(
+        Valoration.service_id == service_id,
+        Valoration.user_id == user_id
+    ).first()
+    if existing_rating:
+        raise HTTPException(status_code=400, detail="Ja has valorat aquest servei.")
+
+    # Crear la valoración
+    new_rating = Valoration(
+        service_id=service_id,
+        user_id=user_id,
+        value=rating,
+        description=comment
+    )
+    db.add(new_rating)
+    db.commit()
+
+    return {
+        "message": "Valoració afegida correctament",
+        "service_id": service_id,
+        "user_id": user_id,
+        "rating": rating,
+        "comment": comment
+    }
+
+# Endpoint para añadir una valoración y comentario a una ruta.
+# Uso: 
+"""
+  const _uri = "http://localhost:8000";
+  const handleEnviarValoracion = async (idx, reserva) => {
+    const token = Cookies.get("token");
+    const { rating, comment } = valoracions[idx] || {};
+    if (!rating || !comment) {
+      alert("Por favor, introduce una valoración y un comentario.");
+      return;
+    }
+    try {
+      const res = await fetch(`${_apiUrl}/api/route-rate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          scheduled_time: reserva.scheduled_time,
+          rating: parseInt(rating),
+          comment
+        })
+      });
+      if (res.ok) {
+        alert("Valoración añadida correctamente");
+      } else {
+        const err = await res.json();
+        alert("Error al enviar valoración: " + (err.detail || res.statusText));
+      }
+    } catch (err) {
+      alert("Error en el servidor: " + err.message);
+    }
+"""
+@app.post("/api/route-rate")
+async def rate_route(
+    scheduled_time: str = Body(...),  # formato ISO
+    rating: int = Body(...),
+    comment: str = Body(...),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db = Depends(get_mongo_db)
+):
+    """
+    Añade una valoración y comentario a una ruta de MongoDB.
+    """
+    # Obtener user_id desde el token
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    try:
+        # Convertir la fecha a datetime
+        sched_dt = datetime.fromisoformat(scheduled_time)
+    except Exception:
+        raise HTTPException(400, "scheduled_time debe ser un string ISO válido")
+
+    # Buscar la ruta
+    route = await db["route"].find_one({
+        "user_id": user_id,
+        "scheduled_time": sched_dt
+    })
+    if not route:
+        raise HTTPException(404, "Ruta no encontrada")
+
+    # Actualizar la ruta con los nuevos campos
+    result = await db["route"].update_one(
+        {"_id": route["_id"]},
+        {"$set": {"valoracion": rating, "comentario": comment}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(500, "No se pudo actualizar la ruta")
+
+    return {"message": "Valoración añadida correctamente"}
+
+# Endpoint para obtener las reservas de un usuario
+@app.get("/api/user-reserves")
+async def get_user_reserves(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    """
+    Devuelve todas las reservas (rutas) de un usuario autenticado (por su token).
+    """
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+    cursor = db["route"].find({"user_id": user_id})
+    reservas = [serialize_mongo_doc(doc) async for doc in cursor]
+    return {"reserves": reservas}
+
+# WebSocket para recibir actualizaciones de posición de coches
+# Lista de websockets conectados
+connected_websockets = set()
+
+# Uso:
+# 1. Conectar al WebSocket: ws://localhost:8000/ws/cars
+# 2. Procesar mensaje con formato JSON:
+# {
+# 'id': 879467412, 
+# 'state': 'moving', 
+# 'checkup': {'collision': 'false', 'motherboard': 'TODO'},
+# 'coordinates': {'x': 0.4202597402597403, 'y': 0.10962767957878902}
+# }
+
+@app.websocket("/ws/cars")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    connected_websockets.add(websocket)
+    try:
+        while True:
+            # Espera mensajes del cliente (opcional, aquí solo hacemos broadcast)
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        connected_websockets.remove(websocket)
+
+# 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
+async def connect_and_listen_cars():
+    uri = "ws://192.168.10.11:8766"
+    while True:
+        try:
+            async with websockets.connect(uri) as websocket:
+                print("✅ Conectado al WebSocket remoto")
+                async for message in websocket:
+                    data = json.loads(message)
+                    #print("📨 Mensaje recibido:", data)
+                    # Broadcast a todos los clientes conectados
+                    to_remove = set()
+                    for ws in connected_websockets:
+                        try:
+                            await ws.send_json(data)
+                        except Exception:
+                            to_remove.add(ws)
+                    connected_websockets.difference_update(to_remove)
+        except Exception as e:
+            await asyncio.sleep(5)
+#-------------------------Endpoints localizacion e IA-----------------------------------
