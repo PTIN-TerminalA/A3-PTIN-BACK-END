@@ -1544,11 +1544,3 @@ async def connect_and_listen_cars():
         except Exception as e:
             await asyncio.sleep(5)
 #-------------------------Endpoints localizacion e IA-----------------------------------
-@app.get("/api/cars")
-async def cars_http_endpoint():
-    return {
-        "message": "WebSocket endpoint active", 
-        "status": "ready",
-        "connected_clients": len(connected_websockets),
-        "websocket_url": "wss://flysy.software/api/cars"
-    }
