@@ -1170,6 +1170,37 @@ from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
 
+#live_car_positions_and_state = {}
+
+#async def connect_and_listen():
+#    uri = "ws://192.168.10.11:8766"
+#    print(f"Intentando conectar a WebSocket en {uri}")
+#    while True:
+#        try:
+#            async with websockets.connect(uri) as websocket:
+#                print("✅ Conectado al WebSocket remoto")
+#                async for message in websocket:
+#                    data = json.loads(message)
+#                    print("📨 Mensaje recibido:", data)
+#
+#                    car_id = str(data.get("id"))  # Convierte a string por consistencia
+#                    coords = data.get("coordinates", {})
+#                    state = str(data.get("state"))
+#                    x = coords.get("x")
+#                    y = coords.get("y")
+#
+#                    if car_id and x is not None and y is not None and state is not None:
+#                        live_car_positions_and_state[car_id] = (float(x), float(y), state)
+#                        print(f"🚗 Posición guardada: {car_id} -> ({x}, {y})")
+#                    else:
+#                        print(f"⚠️ Datos incompletos en mensaje: {data}")
+#
+#        except Exception as e:
+#            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
+#            await asyncio.sleep(5)    
+#-------------------------Endpoints localizacion e IA-----------------------------------
+
+
 live_car_positions_and_state = {}
 
 async def connect_and_listen():

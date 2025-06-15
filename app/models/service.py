@@ -32,7 +32,7 @@ class Schedule(Base):
 
 
 class Valoration(Base):
-    __tablename__ = "valoration"
+    __tablename__ = 'valoration'
     service_id = Column(Integer, ForeignKey("service.id"), primary_key=True)
     user_id = Column(Integer, primary_key=True)
     value = Column(DECIMAL(3, 2), nullable=False)
