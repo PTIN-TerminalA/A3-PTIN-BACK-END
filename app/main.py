@@ -731,10 +731,18 @@ async def create_route_app(
 
 
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import literal
+import httpx
+from app.database import get_db, get_mongo_db
+from app.models import Service  # Asegúrate de que Service esté correctamente importado
+from bson.objectid import ObjectId
+
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
     db_mongo=Depends(get_mongo_db),
-    db_sql=Depends(get_db)
+    db_sql: Session = Depends(get_db)
 ):
     user_id = 44  # Usuario hardcodeado
 
@@ -754,15 +762,15 @@ async def inicia_trajecte(
     if not end_location or not isinstance(end_location, str):
         raise HTTPException(500, "La ruta no conté una 'end_location' vàlida.")
 
-    # 2) Buscar el servei corresponent al end_location a la base de dades SQL
-    service = db_sql.query(Service).filter(Service.name == end_location).first()
+    # 2) Buscar el servei corresponent al end_location de forma segura
+    service = db_sql.query(Service).filter(Service.name == literal(end_location)).first()
     if not service:
         raise HTTPException(404, f"No s'ha trobat el servei amb nom '{end_location}'.")
 
     x = float(service.location_x)
     y = float(service.location_y)
 
-    # 3) Poner el coche en estado "En curs" mediante llamada PUT
+    # 3) Poner el coche en estado "En curs"
     try:
         async with httpx.AsyncClient() as client:
             put_response = await client.put(
@@ -773,7 +781,7 @@ async def inicia_trajecte(
     except Exception as e:
         raise HTTPException(500, f"No s'ha pogut posar el cotxe en estat 'En curs': {str(e)}")
 
-    # 4) Llamar al controlador para mover el cotxe a la destinación
+    # 4) Llamar al controlador para mover el cotxe
     try:
         async with httpx.AsyncClient() as client:
             controller_response = await client.post(
@@ -790,6 +798,7 @@ async def inicia_trajecte(
         "car_id": str(car_id),
         "destinacio": {"x": x, "y": y}
     }
+
 
 
 
