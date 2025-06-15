@@ -754,9 +754,34 @@ async def inicia_trajecte(
         if not end_location or not isinstance(end_location, str):
             raise HTTPException(500, "La ruta no conté una 'end_location' vàlida.")
 
-        service = db_sql.query(Service).filter(Service.name == end_location).first()
+        # Limpiar y normalizar el end_location
+        end_location_clean = end_location.strip()
+        
+        # Intentar búsqueda exacta primero (case-sensitive)
+        service = db_sql.query(Service).filter(Service.name == end_location_clean).first()
+        
+        # Si no encuentra, intentar búsqueda case-insensitive
         if not service:
-            raise HTTPException(404, f"No s'ha trobat el servei amb nom '{end_location}'.")
+            service = db_sql.query(Service).filter(
+                func.lower(Service.name) == func.lower(end_location_clean)
+            ).first()
+        
+        # Si aún no encuentra, intentar búsqueda con LIKE para caracteres similares
+        if not service:
+            service = db_sql.query(Service).filter(
+                Service.name.ilike(f"%{end_location_clean}%")
+            ).first()
+        
+        if not service:
+            # Log para debugging - mostrar qué servicios existen
+            existing_services = db_sql.query(Service.name).limit(10).all()
+            service_names = [s.name for s in existing_services]
+            
+            raise HTTPException(
+                404, 
+                f"No s'ha trobat el servei amb nom '{end_location_clean}'. "
+                f"Serveis disponibles (mostra dels primers 10): {service_names}"
+            )
 
         try:
             x = float(service.location_x)
