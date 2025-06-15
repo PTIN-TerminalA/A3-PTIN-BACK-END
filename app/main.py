@@ -1188,7 +1188,7 @@ async def rate_service(
         "comment": comment
     }
 
-# Endpoint para añadir una valoración y comentario a una ruta
+# Endpoint para añadir una valoración y comentario a una ruta.
 # Uso: 
 """
   const _uri = "http://localhost:8000";
