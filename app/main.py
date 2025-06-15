@@ -613,12 +613,21 @@ async def create_route_app(
         upsert=True
     )
 
+    async with httpx.AsyncClient() as client:
+        controller_response = await client.post(
+            "http://192.168.10.11:8767/controller/demana-cotxe",
+            json={"x": user_location.x, "y": user_location.y},
+            timeout=5.0
+    )
+
     # 9) Devolver respuesta con car_id
     return {
         "message": "Reserva (desde app) confirmada con éxito.",
         "data": serialize_mongo_doc(inserted),
         "car_id": str(car_id)
     }
+
+
 
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
