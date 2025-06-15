@@ -17,6 +17,11 @@ import websockets
 import json
 import threading
 from fastapi import WebSocket, WebSocketDisconnect
+from uuid import uuid4
+from app.models.user import User
+import smtplib
+from email.mime.text import MIMEText
+import os
 
 # --- SQL imports ---
 from app.database import get_db
@@ -37,6 +42,10 @@ from app.schemas.location import LocationSchema, WifiMeasuresList
 # --- Mongo imports ---
 from app.mongodb import get_db as get_mongo_db
 from app.reserves.router import Route
+
+# --- Carrega de variables d'entorn ---
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 
@@ -1544,4 +1553,103 @@ async def connect_and_listen_cars():
                     connected_websockets.difference_update(to_remove)
         except Exception as e:
             await asyncio.sleep(5)
+            
+            
+# Diccionario en memoria para los tokens de recuperación (idealmente en BBDD)
+recovery_tokens = {}  # token: (email, expiración)
+
+@app.post("/api/recovery/request")
+async def request_password_recovery(
+    email: str = Form(...),
+    dni: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(404, detail="Usuari no trobat")
+
+    try:
+        decrypted_dni = decrypt_dni(user.dni)
+    except:
+        raise HTTPException(500, detail="Error desencriptant el DNI")
+
+    if decrypted_dni != dni:
+        raise HTTPException(400, detail="DNI incorrecte")
+
+    # Generar token i guardar temporalment
+    token = str(uuid4())
+    recovery_tokens[token] = {
+        "email": email,
+        "expires": datetime.utcnow() + timedelta(hours=1)
+    }
+
+    link = f"https://flysy.software/recovery/{token}"  # URL frontend
+    await send_recovery_email(email, link)
+
+    return {"message": "Correu enviat amb l'enllaç de recuperació"}
+
+
+async def send_recovery_email(to_email: str, link: str):
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 587
+    smtp_user = os.getenv("SMTP_USER")  # Exemple: el_teu_email@gmail.com
+    smtp_pass = os.getenv("SMTP_PASS")  # Contrasenya d'aplicació generada
+
+    if not smtp_user or not smtp_pass:
+        raise ValueError("Falten credencials SMTP. Comprova les variables d'entorn SMTP_USER i SMTP_PASS.")
+
+    msg = MIMEText(f"""
+    Hola,
+
+    Has sol·licitat recuperar la teva contrasenya. Clica al següent enllaç per establir-ne una de nova:
+
+    {link}
+
+    Si no has sol·licitat aquest canvi, ignora aquest correu.
+
+    Salutacions,
+    L'equip de Flysy
+    """.strip())
+
+    msg["Subject"] = "Recuperació de contrasenya"
+    msg["From"] = smtp_user
+    msg["To"] = to_email
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+    except Exception as e:
+        raise RuntimeError(f"No s'ha pogut enviar el correu: {str(e)}")
+        
+@app.post("/api/recovery/reset")
+async def reset_password(
+    token: str = Form(...),
+    new_password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    token_info = recovery_tokens.get(token)
+    if not token_info:
+        raise HTTPException(400, detail="Token invàlid")
+
+    if token_info["expires"] < datetime.utcnow():
+        del recovery_tokens[token]
+        raise HTTPException(400, detail="Token caducat")
+
+    user = db.query(User).filter(User.email == token_info["email"]).first()
+    if not user:
+        raise HTTPException(404, detail="Usuari no trobat")
+
+    common_passwords = load_common_passwords()
+    if new_password in common_passwords:
+        raise HTTPException(400, detail="Contrasenya massa comuna")
+
+    user.password = hasher.hash(new_password)
+    db.commit()
+    del recovery_tokens[token]
+
+    return {"message": "Contrasenya canviada correctament"}
+            
+            
 #-------------------------Endpoints localizacion e IA-----------------------------------
