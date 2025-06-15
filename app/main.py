@@ -1008,7 +1008,7 @@ async def get_profile(
     """
     Devuelve el perfil completo del usuario: 
     name, email (tabla User) 
-    + birth_date, phone_num, identity (tabla Regular).
+    + birth_date, phone_num, identity (tabla Regular) si existe.
     """
     payload = decode_access_token(creds.credentials)
     user_id = int(payload.get("sub"))
@@ -1018,20 +1018,20 @@ async def get_profile(
     if not user:
         raise HTTPException(404, "Usuari no trobat")
 
-    # 2) Datos de Regular
+    # 2) Datos de Regular (puede ser None si es admin)
     regular: Regular = db.query(Regular).filter(Regular.id == user_id).first()
-    if not regular:
-        admin: Admin = db.query(Admin).filter(Admin.id == user_id).first()
-        if not admin:
-            raise HTTPException(404, "Usuari no té dades regulars ni és administrador")
 
-    return {
+    profile = {
         "name": user.name,
-        "email": user.email,
-        "birth_date": regular.birth_date.isoformat(),
-        "phone_num": regular.phone_num,
-        "identity": regular.identity
+        "email": user.email
     }
+    if regular:
+        profile.update({
+            "birth_date": regular.birth_date.isoformat(),
+            "phone_num": regular.phone_num,
+            "identity": regular.identity
+        })
+    return profile
 
 @app.patch("/api/profile", response_model=dict)
 async def update_profile(
