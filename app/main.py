@@ -1533,7 +1533,7 @@ async def connect_and_listen_cars():
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
                     data = json.loads(message)
-                    #print("📨 Mensaje recibido:", data)
+                    print("📨 Mensaje recibido:", data)
                     # Broadcast a todos los clientes conectados
                     to_remove = set()
                     for ws in connected_websockets:
