@@ -532,14 +532,18 @@ async def list_reserves(
 @app.post("/api/reserves/app-basic")
 async def create_basic_route(
     payload: dict = Body(...),
-    db_sql: Session = Depends(get_db)
+    db_sql: Session = Depends(get_db),
+    db_mongo=Depends(get_mongo_db)
 ):
     """
-    1) Recibe 'location' con x,y y 'end_location' (string).
-    2) Valida parámetros.
-    3) Busca en SQL las coordenadas del servicio end_location.
-    4) Llama a /controller/demana-cotxe con esas coordenadas.
-    5) Devuelve el status y data del controlador junto con la confirmación.
+    Endpoint que recibe:
+    - location: { x: float, y: float }
+    - end_location: string (nombre del servicio)
+
+    1) Obtiene el servicio más cercano para ubicación del payload.
+    2) Recupera sus coordenadas y llama a /controller/demana-cotxe.
+    3) Crea la reserva en MongoDB con user_id=44.
+    4) Devuelve estado del controlador y datos de la reserva.
     """
     # 1) Validar y extraer ubicación del usuario
     loc = payload.get("location")
@@ -555,23 +559,21 @@ async def create_basic_route(
     if not end_loc or not isinstance(end_loc, str):
         raise HTTPException(status_code=400, detail="Debes enviar 'end_location' (string).")
 
-    # 3) Buscar servicio en base de datos por nombre
-    service_obj = db_sql.query(Service).filter(Service.name == end_loc).first()
+    # 3) Servicio más cercano
+    nearest_resp = await getNearestService(user_location, db_sql)
+    service_id = nearest_resp.get("nearest_service_id")
+    if service_id is None:
+        raise HTTPException(status_code=500, detail="No se obtuvo servicio cercano.")
+
+    # 4) Recuperar coordenadas del servicio de SQL
+    service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
     if not service_obj:
-        raise HTTPException(status_code=404, detail=f"Servicio '{end_loc}' no encontrado.")
+        raise HTTPException(status_code=404, detail="Servicio no encontrado en base de datos.")
     target_x = float(service_obj.location_x)
     target_y = float(service_obj.location_y)
 
-    # 4) Llamada al controlador externo /controller/demana-cotxe
-    payload_ctrl = {
-    "x": target_x,
-    "y": target_y,
-    "desti": {
-        "x": target_x,
-        "y": target_y
-    }
-}
-
+    # 5) Llamada al controlador externo
+    payload_ctrl = {"x": target_x, "y": target_y, "desti": {"x": target_x, "y": target_y}}
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
@@ -579,7 +581,6 @@ async def create_basic_route(
                 json=payload_ctrl,
                 timeout=5.0
             )
-        # Intentar parsear JSON o text
         try:
             ctrl_data = controller_resp.json()
         except ValueError:
@@ -587,14 +588,41 @@ async def create_basic_route(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al llamar al controlador: {e}")
 
-    # 5) Respuesta final
+    # 6) Crear la reserva en MongoDB (usuario 44)
+    # Buscar coche disponible y marcarlo "Solicitat"
+    car = await db_mongo["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(status_code=400, detail="No hay coches disponibles.")
+    await db_mongo["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Solicitat"}})
+    car_id = car["_id"]
+
+    new_route = {
+        "user_id": 44,
+        "start_location": service_obj.name,
+        "end_location": end_loc,
+        "scheduled_time": datetime.utcnow(),
+        "state": "En curs",
+        "car_id": car_id
+    }
+    result = await db_mongo["route"].insert_one(new_route)
+    inserted = await db_mongo["route"].find_one({"_id": result.inserted_id})
+    if not inserted:
+        raise HTTPException(status_code=500, detail="No se pudo crear la ruta en MongoDB.")
+
+    # 7) Actualizar historial del usuario
+    await db_mongo["user"].update_one(
+        {"id": 44},
+        {"$push": {"route_history": inserted}, "$setOnInsert": {"id": 44}},
+        upsert=True
+    )
+
+    # 8) Devolver los resultados
     return {
-        "message": "Llamada al controlador realizada correctamente.",
-        "received_location": {"x": user_location.x, "y": user_location.y},
-        "service_name": service_obj.name,
-        "service_location": {"x": target_x, "y": target_y},
+        "message": "Reserva creada y coche solicitado correctamente.",
         "controller_status": controller_resp.status_code,
-        "controller_data": ctrl_data
+        "controller_data": ctrl_data,
+        "reservation": serialize_mongo_doc(inserted),
+        "car_id": str(car_id)
     }
 
 
