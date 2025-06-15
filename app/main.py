@@ -754,34 +754,28 @@ async def inicia_trajecte(
         if not end_location or not isinstance(end_location, str):
             raise HTTPException(500, "La ruta no conté una 'end_location' vàlida.")
 
-        # Limpiar y normalizar el end_location
+        # Limpiar espacios en blanco
         end_location_clean = end_location.strip()
         
-        # Intentar búsqueda exacta primero (case-sensitive)
+        # Debug: mostrar qué estamos buscando
+        print(f"Buscando servicio: '{end_location_clean}'")
+        
+        # Búsqueda exacta (SQLAlchemy ORM maneja automáticamente las comillas)
         service = db_sql.query(Service).filter(Service.name == end_location_clean).first()
         
-        # Si no encuentra, intentar búsqueda case-insensitive
         if not service:
-            service = db_sql.query(Service).filter(
-                func.lower(Service.name) == func.lower(end_location_clean)
-            ).first()
-        
-        # Si aún no encuentra, intentar búsqueda con LIKE para caracteres similares
-        if not service:
-            service = db_sql.query(Service).filter(
-                Service.name.ilike(f"%{end_location_clean}%")
-            ).first()
-        
-        if not service:
-            # Log para debugging - mostrar qué servicios existen
-            existing_services = db_sql.query(Service.name).limit(10).all()
-            service_names = [s.name for s in existing_services]
+            # Si no encuentra, mostrar servicios similares para debugging
+            all_services = db_sql.query(Service.name).all()
+            service_names = [s.name for s in all_services if end_location_clean.lower() in s.name.lower()]
             
-            raise HTTPException(
-                404, 
-                f"No s'ha trobat el servei amb nom '{end_location_clean}'. "
-                f"Serveis disponibles (mostra dels primers 10): {service_names}"
-            )
+            if service_names:
+                error_msg = f"No s'ha trobat exactament '{end_location_clean}'. Servicis similars trobats: {service_names[:5]}"
+            else:
+                # Mostrar algunos servicios para comparar
+                sample_services = [s.name for s in all_services[:10]]
+                error_msg = f"No s'ha trobat '{end_location_clean}'. Exemples de serveis disponibles: {sample_services}"
+            
+            raise HTTPException(404, error_msg)
 
         try:
             x = float(service.location_x)
@@ -812,7 +806,6 @@ async def inicia_trajecte(
     except Exception as e:
         # Temporalmente, para ver qué pasa
         raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
-
 
 
 
