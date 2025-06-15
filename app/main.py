@@ -1525,6 +1525,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
 async def connect_and_listen_cars():
+    print("🔗 Conectando al WebSocket remoto para recibir posiciones de coches...")
     uri = "ws://192.168.10.11:8766"
     while True:
         try:
