@@ -528,17 +528,6 @@ async def list_reserves(
 
 
 
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-import httpx
-from datetime import datetime
-
-from app.schemas import LocationSchema
-from app.models import Service
-from app.database import get_mongo_db, get_db
-from app.utils import getNearestService, serialize_mongo_doc
-
-app = FastAPI()
 
 @app.post("/api/reserves/app-basic")
 async def create_basic_route(
