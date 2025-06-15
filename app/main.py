@@ -1,5 +1,4 @@
 # app/main.py
-
 from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -18,7 +17,6 @@ import websockets
 import json
 import threading
 from fastapi import WebSocket, WebSocketDisconnect
-
 
 # --- SQL imports ---
 from app.database import get_db
@@ -50,8 +48,6 @@ async def startup_event():
     asyncio.create_task(connect_and_listen())
     asyncio.create_task(connect_and_listen_cars())
     
-
-
 # 🔓 CORS (permitir React en :5173)
 app.add_middleware(
     CORSMiddleware,
@@ -1031,6 +1027,95 @@ async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
 from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
+
+#live_car_positions_and_state = {}
+
+#async def connect_and_listen():
+#    uri = "ws://192.168.10.11:8766"
+#    print(f"Intentando conectar a WebSocket en {uri}")
+#    while True:
+#        try:
+#            async with websockets.connect(uri) as websocket:
+#                print("✅ Conectado al WebSocket remoto")
+#                async for message in websocket:
+#                    data = json.loads(message)
+#                    print("📨 Mensaje recibido:", data)
+#
+#                    car_id = str(data.get("id"))  # Convierte a string por consistencia
+#                    coords = data.get("coordinates", {})
+#                    state = str(data.get("state"))
+#                    x = coords.get("x")
+#                    y = coords.get("y")
+#
+#                    if car_id and x is not None and y is not None and state is not None:
+#                        live_car_positions_and_state[car_id] = (float(x), float(y), state)
+#                        print(f"🚗 Posición guardada: {car_id} -> ({x}, {y})")
+#                    else:
+#                        print(f"⚠️ Datos incompletos en mensaje: {data}")
+#
+#        except Exception as e:
+#            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
+#            await asyncio.sleep(5)    
+#-------------------------Endpoints localizacion e IA-----------------------------------
+
+
+live_car_positions_and_state = {}
+
+async def connect_and_listen():
+    uri = "ws://192.168.10.11:8766"
+    print(f"Intentando conectar a WebSocket en {uri}")
+    while True:
+        try:
+            async with websockets.connect(uri) as websocket:
+                print("✅ Conectado al WebSocket remoto")
+                async for message in websocket:
+                    data = json.loads(message)
+                    print("📨 Mensaje recibido:", data)
+
+                    car_id = str(data.get("id"))  # Convierte a string por consistencia
+                    coords = data.get("coordinates", {})
+                    state = str(data.get("state"))
+                    x = coords.get("x")
+                    y = coords.get("y")
+
+                    if car_id and x is not None and y is not None and state is not None:
+                        live_car_positions_and_state[car_id] = (float(x), float(y), state)
+                        print(f"🚗 Posición guardada: {car_id} -> ({x}, {y})")
+                    else:
+                        print(f"⚠️ Datos incompletos en mensaje: {data}")
+
+        except Exception as e:
+            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
+            await asyncio.sleep(5)    
+#-------------------------Endpoints localizacion e IA-----------------------------------
+
+#para la app
+
+@app.get("/cotxe/{cotxe_id}/status")
+async def get_car_status(
+    cotxe_id: str,
+    db=Depends(get_mongo_db)
+):
+    # 1) Obtener posición desde el diccionario global
+    pos = live_car_positions_and_state.get(cotxe_id)
+    if pos is None:
+        raise HTTPException(status_code=404, detail=f"No s'ha trobat la posició del cotxe {cotxe_id}")
+
+    # 2) Obtener estado desde MongoDB
+    #car_doc = await db["car"].find_one({"_id": cotxe_id}, {"state": "stopped"})
+
+    #if not car_doc:
+    #    raise HTTPException(status_code=404, detail=f"No s'ha trobat el cotxe {cotxe_id} a la BDD")
+
+    # 3) Devolver resultado
+    return {
+        "car_id": cotxe_id,
+        "position": {
+            "x": pos[0],
+            "y": pos[1]
+        },
+        "state": pos[2]
+    }
 
 # Endpoint para obtener el id de un servicio dado su nombre
 # Uso: /api/service-id?name="nombredelservicio"
