@@ -530,23 +530,38 @@ async def list_reserves(
 
 
 @app.post("/api/reserves/app-basic")
-async def create_basic_route():
+async def create_basic_route(db_sql: Session = Depends(get_db)):
     """
-    Endpoint muy básico que solo llama a /controller/demana-cotxe
-    con una localización fija: x=0.5, y=0.5, incluyendo `desti`.
+    1) Usuario fijo en x=0.5, y=0.5.
+    2) Llamada a getNearestService para obtener servicio más cercano.
+    3) Recuperar coordenadas del servicio de SQL.
+    4) Llamar a /controller/demana-cotxe con esas coordenadas.
     """
-    origin = {"x": 0.5, "y": 0.5}
-    desti = {"x": 0.5, "y": 0.5}
-    payload = {**origin, "desti": desti}
+    # 1) Ubicación fija del usuario
+    user_location = LocationSchema(x=0.5, y=0.5)
 
+    # 2) Obtener servicio más cercano
+    nearest_resp = await getNearestService(user_location, db_sql)
+    service_id = nearest_resp.get("nearest_service_id")
+    if service_id is None:
+        raise HTTPException(status_code=500, detail="No se obtuvo servicio cercano.")
+
+    # 3) Recuperar coordenadas del servicio
+    service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
+    if not service_obj:
+        raise HTTPException(status_code=404, detail="Servicio no encontrado en base de datos.")
+    target_x = float(service_obj.location_x)
+    target_y = float(service_obj.location_y)
+
+    # 4) Llamada al controlador externo
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
-                json=payload,
+                json={"x": target_x, "y": target_y},
                 timeout=5.0
             )
-        # Intentamos parsear JSON, si falla devolvemos texto
+        # Intentar parsear respuesta
         try:
             data = controller_resp.json()
         except ValueError:
