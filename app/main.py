@@ -733,18 +733,15 @@ async def create_route_app(
 
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
-    destination: dict,  # debe contener {"x": float, "y": float}
-    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db=Depends(get_mongo_db)
+    db_mongo=Depends(get_mongo_db),
+    db_sql=Depends(get_db)
 ):
-    # 1) Obtener user_id desde el token
-    payload = decode_access_token(creds.credentials)
-    user_id = int(payload.get("sub"))
+    user_id = 44  # Usuario hardcodeado
 
-    # 2) Obtener la última reserva del usuario (la más reciente)
-    last_route = await db["route"].find_one(
+    # 1) Obtener la última reserva del usuario desde MongoDB
+    last_route = await db_mongo["route"].find_one(
         {"user_id": user_id},
-        sort=[("scheduled_time", -1)]  # orden descendente
+        sort=[("scheduled_time", -1)]
     )
     if not last_route:
         raise HTTPException(404, "No s'ha trobat cap reserva activa per aquest usuari.")
@@ -753,28 +750,35 @@ async def inicia_trajecte(
     if not car_id:
         raise HTTPException(500, "Reserva sense cotxe assignat.")
 
-    # 3) Llamar al endpoint PUT /cotxe/{cotxe_id}/en_curs para actualizar el estado del cotxe
+    end_location = last_route.get("end_location")
+    if not end_location or not isinstance(end_location, str):
+        raise HTTPException(500, "La ruta no conté una 'end_location' vàlida.")
+
+    # 2) Buscar el servei corresponent al end_location a la base de dades SQL
+    service = db_sql.query(Service).filter(Service.name == end_location).first()
+    if not service:
+        raise HTTPException(404, f"No s'ha trobat el servei amb nom '{end_location}'.")
+
+    x = float(service.location_x)
+    y = float(service.location_y)
+
+    # 3) Poner el coche en estado "En curs" mediante llamada PUT
     try:
         async with httpx.AsyncClient() as client:
             put_response = await client.put(
-                f"http://192.168.10.10:8000/cotxe/{car_id}/en_curs",  # Ajusta host/puerto si es necesario
+                f"http://192.168.10.10:8000/cotxe/{car_id}/en_curs",
                 timeout=5.0
             )
             put_response.raise_for_status()
     except Exception as e:
         raise HTTPException(500, f"No s'ha pogut posar el cotxe en estat 'En curs': {str(e)}")
 
-    # 4) Llamar al controller para enviar el cotxe a la destinación
+    # 4) Llamar al controlador para mover el cotxe a la destinación
     try:
-        x = destination.get("x")
-        y = destination.get("y")
-        if x is None or y is None:
-            raise HTTPException(400, "Cal proporcionar les coordenades 'x' i 'y' de la destinació.")
-
         async with httpx.AsyncClient() as client:
             controller_response = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
-                json={"x": x, "y": y},
+                json={"x": x, "y": y, "desti": {"x": x, "y": y}},
                 timeout=5.0
             )
             controller_response.raise_for_status()
@@ -786,6 +790,7 @@ async def inicia_trajecte(
         "car_id": str(car_id),
         "destinacio": {"x": x, "y": y}
     }
+
 
 
 # --- POST /reserves/usuari (reservacotxe) ---
