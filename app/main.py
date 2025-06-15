@@ -49,9 +49,18 @@ async def startup_event():
     asyncio.create_task(connect_and_listen_cars())
     
 # 🔓 CORS (permitir React en :5173)
+#ho permetem de moment a tot arreu
+"""app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software", "flysy.software/"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)"""
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://localhost", "http://192.168.10.10:5173", "http://192.168.10.10:3001","http://192.168.10.10", "http://projectevia-a.duckdns.org/", "flysy.software", "flysy.software/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -228,6 +237,80 @@ async def get_user_type(token: str, db: Session = Depends(get_db)):
         return {"user_type": str("non-assigned")}
 
 
+#Aquest endpoint esborra l'admin amb id = admin_id
+@app.delete("/api/admins/{admin_id}/full")
+async def delete_admin_full(admin_id: int, db: Session = Depends(get_db)):
+    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    user = db.query(User).filter(User.id == admin_id).first()
+
+    if not admin and not user:
+        raise HTTPException(404, "Admin o usuari no trobat")
+
+    if admin:
+        db.delete(admin)
+    if user:
+        db.delete(user)
+    
+    db.commit()
+    return {"message": "Admin i usuari eliminats correctament"}
+
+@app.get("/api/admins")
+async def list_admins(db: Session = Depends(get_db)):
+    admins = db.query(Admin).all()
+    result = []
+    for admin in admins:
+        user = db.query(User).filter(User.id == admin.id).first()
+        result.append({
+            "id": admin.id,
+            "superadmin": admin.superadmin,
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "dni": user.dni
+            } if user else None
+        })
+    return result
+
+
+#Aquest endpoint ens reotrna la info de l'admin amb id = admin_id
+@app.get("/api/admins/{admin_id}")
+async def get_admin_details(admin_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == admin_id).first()
+    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+
+    if not user or not admin:
+        raise HTTPException(404, "Admin no trobat")
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "dni": user.dni,
+    }
+
+@app.get("/api/admins/search")
+async def search_admins_by_name(apellido: str, db: Session = Depends(get_db)):
+    results = (
+        db.query(Admin)
+        .join(User, Admin.id == User.id)
+        .filter(User.name.ilike(f"%{apellido}%"))
+        .all()
+    )
+
+    data = []
+    for admin in results:
+        user = db.query(User).filter(User.id == admin.id).first()
+        data.append({
+            "id": admin.id,
+            "user": {
+                "name": user.name,
+                "email": user.email,
+                "dni": user.dni
+            }
+        })
+    return data
+
 #Aquest endpoint ens reotrna la llista de serveis disponibles
 @app.get("/api/getServices",response_model=List[ServiceSchema])
 async def getServices(db: Session = Depends(get_db)):
@@ -288,7 +371,7 @@ async def getValoration(service_id: int, db: Session = Depends(get_db)):
 #Aquest endpoint ens retorna la posició d'un usuari donat un payload de mesures wifi
 @app.post("/api/getUserPosition")
 async def getUserPosition(payload: WifiMeasuresList):
-    ai_url = "http://127.0.0.1:8080/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
+    ai_url = "http://10.60.0.3:2222/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
 
     try:
         async with httpx.AsyncClient() as client:
@@ -325,7 +408,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
+            response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -355,7 +438,7 @@ async def get_nearest_car(userLocation: LocationSchema):
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("http://127.0.0.1:8080/getNearest", json=payload)
+            response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
@@ -386,7 +469,7 @@ async def read_root():
     return {"message": "Welcome to the API amb SQL i Mongo!"}
 
 # --- GET /reserves ---
-@app.get("/reserves")
+@app.get("/api/reserves")
 async def list_reserves(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db_mongo = Depends(get_mongo_db),
@@ -437,7 +520,7 @@ async def list_reserves(
 
 
 # --- POST /reserves/app (reservas desde app móvil, con scheduled_time automático y estado fijo) ---
-@app.post("/reserves/app")
+@app.post("/api/reserves/app")
 async def create_route_app(
     payload: dict = Body(...),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -523,16 +606,70 @@ async def create_route_app(
 
     # 9) Devolver respuesta con car_id
     return {
-        "message": "Reserva (desde app) confirmada amb èxit.",
+        "message": "Reserva (desde app) confirmada con éxito.",
         "data": serialize_mongo_doc(inserted),
         "car_id": str(car_id)
     }
 
+@app.post("/api/inicia-trajecte")
+async def inicia_trajecte(
+    destination: dict,  # debe contener {"x": float, "y": float}
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db=Depends(get_mongo_db)
+):
+    # 1) Obtener user_id desde el token
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
 
+    # 2) Obtener la última reserva del usuario (la más reciente)
+    last_route = await db["route"].find_one(
+        {"user_id": user_id},
+        sort=[("scheduled_time", -1)]  # orden descendente
+    )
+    if not last_route:
+        raise HTTPException(404, "No s'ha trobat cap reserva activa per aquest usuari.")
+
+    car_id = last_route.get("car_id")
+    if not car_id:
+        raise HTTPException(500, "Reserva sense cotxe assignat.")
+
+    # 3) Llamar al endpoint PUT /cotxe/{cotxe_id}/en_curs para actualizar el estado del cotxe
+    try:
+        async with httpx.AsyncClient() as client:
+            put_response = await client.put(
+                f"http://192.168.10.10:8000/cotxe/{car_id}/en_curs",  # Ajusta host/puerto si es necesario
+                timeout=5.0
+            )
+            put_response.raise_for_status()
+    except Exception as e:
+        raise HTTPException(500, f"No s'ha pogut posar el cotxe en estat 'En curs': {str(e)}")
+
+    # 4) Llamar al controller para enviar el cotxe a la destinación
+    try:
+        x = destination.get("x")
+        y = destination.get("y")
+        if x is None or y is None:
+            raise HTTPException(400, "Cal proporcionar les coordenades 'x' i 'y' de la destinació.")
+
+        async with httpx.AsyncClient() as client:
+            controller_response = await client.post(
+                "http://192.168.10.11:8767/controller/demana-cotxe",
+                json={"x": x, "y": y},
+                timeout=5.0
+            )
+            controller_response.raise_for_status()
+    except Exception as e:
+        raise HTTPException(500, f"Error en contactar amb el controlador: {str(e)}")
+
+    return {
+        "message": "Trajecte iniciat correctament.",
+        "car_id": str(car_id),
+        "destinacio": {"x": x, "y": y}
+    }
 
 
 # --- POST /reserves/usuari (reservacotxe) ---
-@app.post("/reserves/usuari")
+@app.post("/api/reserves/usuari")
 async def create_route_user(
     route: Route,
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -601,7 +738,7 @@ async def create_route_user(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://controller/demana-cotxe",  # Ajusta esta URL según tu configuración
+                "http://192.168.10.11:8767/controller/demana-cotxe",  # Ajusta esta URL según tu configuración
                 json={"x": x_coord, "y": y_coord},
                 timeout=5.0
             )
@@ -620,7 +757,7 @@ async def create_route_user(
 
 
 # --- POST /reserves/programada (gestioReserves) ---
-@app.post("/reserves/programada")
+@app.post("/api/reserves/programada")
 async def create_route_admin(
     payload: dict = Body(...),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -657,7 +794,7 @@ async def create_route_admin(
         raise HTTPException(400, "scheduled_time ha de ser ISODate o ISO string")
 
     # 5) Construir documento en orden fijo
-    doc = {
+    doc = { api/
         "user_id":        user_id,
         "start_location": payload["start_location"],
         "end_location":   payload["end_location"],
@@ -693,7 +830,7 @@ async def create_route_admin(
     }
 
 # --- PATCH /reserves/{reserve_id} ---
-@app.patch("/reserves/{reserve_id}")
+@app.patch("/api/reserves/{reserve_id}")
 async def update_route(
     reserve_id: str = Path(...),
     payload: dict = Body(...),
@@ -721,7 +858,7 @@ async def update_route(
 
 
 
-@app.delete("/reserves/{reserve_id}")
+@app.delete("/api/reserves/{reserve_id}")
 async def delete_reserve(
     reserve_id: str = Path(..., description="ID de la reserva a eliminar"),
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
