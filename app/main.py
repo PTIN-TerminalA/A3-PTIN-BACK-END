@@ -1550,5 +1550,5 @@ async def cars_http_endpoint():
         "message": "WebSocket endpoint active", 
         "status": "ready",
         "connected_clients": len(connected_websockets),
-        "websocket_url": "ws://localhost:8000/api/cars or wss://flysy.software/api/cars"
+        "websocket_url": "wss://flysy.software/api/cars"
     }
