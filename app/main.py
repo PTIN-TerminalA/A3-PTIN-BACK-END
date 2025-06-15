@@ -533,16 +533,20 @@ async def list_reserves(
 async def create_basic_route():
     """
     Endpoint muy básico que solo llama a /controller/demana-cotxe
-    con una localización fija: x=0.5, y=0.5.
+    con una localización fija: x=0.5, y=0.5, incluyendo `desti`.
     """
+    origin = {"x": 0.5, "y": 0.5}
+    desti = {"x": 0.5, "y": 0.5}
+    payload = {**origin, "desti": desti}
+
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
-                json={"x": 0.5, "y": 0.5},
+                json=payload,
                 timeout=5.0
             )
-        # Devolver status code y cuerpo JSON si lo hay
+        # Intentamos parsear JSON, si falla devolvemos texto
         try:
             data = controller_resp.json()
         except ValueError:
@@ -550,7 +554,6 @@ async def create_basic_route():
         return {"controller_status": controller_resp.status_code, "controller_data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al llamar a controlador: {e}")
-
 
 
 
