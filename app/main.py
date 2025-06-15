@@ -731,14 +731,6 @@ async def create_route_app(
 
 
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import literal
-import httpx
-from app.database import get_db, get_mongo_db
-from app.models import Service  # Asegúrate de que Service esté correctamente importado
-from bson.objectid import ObjectId
-
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
     db_mongo=Depends(get_mongo_db),
