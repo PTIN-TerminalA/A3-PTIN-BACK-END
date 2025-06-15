@@ -736,60 +736,57 @@ async def inicia_trajecte(
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
-    user_id = 44  # Usuario hardcodeado
-
-    # 1) Obtener la última reserva del usuario desde MongoDB
-    last_route = await db_mongo["route"].find_one(
-        {"user_id": user_id},
-        sort=[("scheduled_time", -1)]
-    )
-    if not last_route:
-        raise HTTPException(404, "No s'ha trobat cap reserva activa per aquest usuari.")
-
-    car_id = last_route.get("car_id")
-    if not car_id:
-        raise HTTPException(500, "Reserva sense cotxe assignat.")
-
-    end_location = last_route.get("end_location")
-    if not end_location or not isinstance(end_location, str):
-        raise HTTPException(500, "La ruta no conté una 'end_location' vàlida.")
-
-    # 2) Buscar el servei corresponent al end_location de forma segura
-    service = db_sql.query(Service).filter(Service.name == literal(end_location)).first()
-    if not service:
-        raise HTTPException(404, f"No s'ha trobat el servei amb nom '{end_location}'.")
-
-    x = float(service.location_x)
-    y = float(service.location_y)
-
-    # 3) Poner el coche en estado "En curs"
     try:
+        user_id = 44
+
+        last_route = await db_mongo["route"].find_one(
+            {"user_id": user_id},
+            sort=[("scheduled_time", -1)]
+        )
+        if not last_route:
+            raise HTTPException(404, "No s'ha trobat cap reserva activa per aquest usuari.")
+
+        car_id = last_route.get("car_id")
+        if not car_id:
+            raise HTTPException(500, "Reserva sense cotxe assignat.")
+
+        end_location = last_route.get("end_location")
+        if not end_location or not isinstance(end_location, str):
+            raise HTTPException(500, "La ruta no conté una 'end_location' vàlida.")
+
+        service = db_sql.query(Service).filter(Service.name == end_location).first()
+        if not service:
+            raise HTTPException(404, f"No s'ha trobat el servei amb nom '{end_location}'.")
+
+        try:
+            x = float(service.location_x)
+            y = float(service.location_y)
+        except Exception as e:
+            raise HTTPException(500, f"Error al convertir coordenades a float: {e}")
+
         async with httpx.AsyncClient() as client:
             put_response = await client.put(
                 f"http://192.168.10.10:8000/cotxe/{car_id}/en_curs",
                 timeout=5.0
             )
             put_response.raise_for_status()
-    except Exception as e:
-        raise HTTPException(500, f"No s'ha pogut posar el cotxe en estat 'En curs': {str(e)}")
 
-    # 4) Llamar al controlador para mover el cotxe
-    try:
-        async with httpx.AsyncClient() as client:
             controller_response = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
                 json={"x": x, "y": y, "desti": {"x": x, "y": y}},
                 timeout=5.0
             )
             controller_response.raise_for_status()
-    except Exception as e:
-        raise HTTPException(500, f"Error en contactar amb el controlador: {str(e)}")
 
-    return {
-        "message": "Trajecte iniciat correctament.",
-        "car_id": str(car_id),
-        "destinacio": {"x": x, "y": y}
-    }
+        return {
+            "message": "Trajecte iniciat correctament.",
+            "car_id": str(car_id),
+            "destinacio": {"x": x, "y": y}
+        }
+
+    except Exception as e:
+        # Temporalmente, para ver qué pasa
+        raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
 
 
 
