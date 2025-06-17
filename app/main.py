@@ -579,7 +579,7 @@ async def create_basic_route(
     if not service_obj:
         raise HTTPException(status_code=404, detail="Servicio no encontrado en base de datos.")
     target_x = float(service_obj.location_x)
-    target_y = float(service_obj.location_y)
+    target_y = 1 - float(service_obj.location_y)  # Transformación: 1-y
 
     # 5) Llamada al controlador externo
     payload_ctrl = {"x": target_x, "y": target_y, "desti": {"x": target_x, "y": target_y}}
@@ -638,105 +638,6 @@ async def create_basic_route(
 
 
 
-# --- POST /reserves/app (reservas desde app móvil, con scheduled_time automático y estado fijo) ---
-@app.post("/api/reserves/app")
-async def create_route_app(
-    payload: dict = Body(...),
-    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db_mongo=Depends(get_mongo_db),
-    db_sql: Session = Depends(get_db)
-):
-    """
-    Crea una reserva desde la app:
-    1) Decodifica token → user_id.
-    2) Obtiene servicio más cercano vía getNearestService(location).
-    3) Usa el nombre de ese servicio como start_location.
-    4) end_location lo indica el usuario en payload.
-    5) scheduled_time = ahora (); state = "En curs".
-    6) Marca el coche como "Solicitat".
-    7) Inserta en Mongo y en historial de user.
-    8) Devuelve {"message", "data": reserva, "car_id": "<ObjectId>"}
-    """
-    # 1) Decodificar token y extraer user_id
-    payload_token = decode_access_token(creds.credentials)
-    user_id = int(payload_token.get("sub"))
-
-    # 2) Validar y extraer ubicación actual de payload
-    loc = payload.get("location")
-    if not loc or not isinstance(loc, dict):
-        raise HTTPException(status_code=400, detail="Debes enviar `location` con x e y.")
-    try:
-        user_location = LocationSchema(x=loc["x"], y=loc["y"])
-    except Exception:
-        raise HTTPException(status_code=400, detail="Formato inválido para `location`.")
-
-    # 3) Llamar a getNearestService(...) para obtener servicio más cercano
-    nearest_resp = await getNearestService(user_location, db_sql)
-    service_id = nearest_resp.get("nearest_service_id")
-    if service_id is None:
-        raise HTTPException(status_code=500, detail="No se pudo determinar servicio cercano.")
-    service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
-    if not service_obj:
-        raise HTTPException(status_code=404, detail="Servicio no encontrado en SQL.")
-    start_location_name = service_obj.name
-
-    # 4) Validar end_location en payload
-    end_loc = payload.get("end_location")
-    if not end_loc or not isinstance(end_loc, str):
-        raise HTTPException(status_code=400, detail="Debes indicar `end_location` (destino).")
-
-    # 5) scheduled_time = ahora(); state fijo "En curs"
-    scheduled_dt = datetime.utcnow()
-    state = "En curs"
-
-    # 6) Buscar coche disponible y marcarlo "Solicitat"
-    car = await db_mongo["car"].find_one({"state": "Disponible"})
-    if not car:
-        raise HTTPException(status_code=400, detail="No hay coches disponibles.")
-    await db_mongo["car"].update_one(
-        {"_id": car["_id"]},
-        {"$set": {"state": "Solicitat"}}
-    )
-    car_id = car["_id"]
-
-    # 7) Construir documento y guardarlo en "route"
-    new_route_doc = {
-        "user_id":        user_id,
-        "start_location": start_location_name,
-        "end_location":   end_loc,
-        "scheduled_time": scheduled_dt,
-        "state":          state,
-        "car_id":         car_id
-    }
-    result = await db_mongo["route"].insert_one(new_route_doc)
-    inserted = await db_mongo["route"].find_one({"_id": result.inserted_id})
-    if not inserted:
-        raise HTTPException(status_code=500, detail="No se pudo recuperar la reserva.")
-
-    # 8) Upsert en colección "user" para historial
-    await db_mongo["user"].update_one(
-        {"id": user_id},
-        {
-            "$push":       {"route_history": inserted},
-            "$setOnInsert": {"id": user_id}
-        },
-        upsert=True
-    )
-
-    async with httpx.AsyncClient() as client:
-        print("estoy llamando a demana-cotxe con loc: " + str(user_location.x) + " y " + str(user_location.y))
-        controller_response = await client.post(
-            "http://192.168.10.11:8767/controller/demana-cotxe",
-            json={"x": user_location.x, "y": user_location.y},
-            timeout=5.0
-)
-
-    # 9) Devolver respuesta con car_id
-    return {
-        "message": "Reserva (desde app) confirmada con éxito.",
-        "data": serialize_mongo_doc(inserted),
-        "car_id": str(car_id)
-    }
 
 
 
@@ -794,7 +695,7 @@ async def inicia_trajecte(
 
         try:
             x = float(service.location_x)
-            y = float(service.location_y)
+            y = 1-float(service.location_y)
         except Exception as e:
             raise HTTPException(500, f"Error al convertir coordenades a float: {e}")
 
