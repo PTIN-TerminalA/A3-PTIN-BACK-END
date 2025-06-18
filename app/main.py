@@ -469,9 +469,10 @@ async def get_nearest_car(userLocation: LocationSchema):
         # Re-lanzamos HTTPExceptions para que FastAPI las maneje como están
         raise
     except Exception as e:
-    detalle_error = str(e) or "Error inesperado sin mensaje"
-    print(f"❌ ERROR inesperado en get_nearest_car: {detalle_error}")
-    raise HTTPException(status_code=500, detail=detalle_error)
+        detalle_error = str(e) or "Error inesperado sin mensaje"
+        print(f"❌ ERROR inesperado en get_nearest_car: {detalle_error}")
+        raise HTTPException(status_code=500, detail=detalle_error)
+
 
 
 
