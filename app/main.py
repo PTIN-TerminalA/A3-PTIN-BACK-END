@@ -431,18 +431,22 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 # 🚗 Endpoint para obtener el coche más cercano
 @app.post("/api/getNearestCar")
 async def get_nearest_car(userLocation: LocationSchema):
-    if not live_car_positions:
+    if not live_car_positions_and_state:
         raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
 
-    # Preparar el diccionario de coches per la petició a l'API de routing
-    car_dict = {
-        c._id: (float(c.location_x), float(c.location_y))
-        for c in live_car_positions
-    }
+    # Extraer coordenadas de cada coche desde el diccionario recibido por WebSocket
+    car_dict = {}
+    for car_id, car_info in live_car_positions_and_state.items():
+        position = car_info.get("position")
+        if position and hasattr(position, "x") and hasattr(position, "y"):
+            car_dict[str(car_id)] = [float(position.x), float(position.y)]
+
+    if not car_dict:
+        raise HTTPException(status_code=404, detail="No s'han pogut obtenir coordenades dels cotxes")
 
     payload = {
-        "position": (userLocation.x, userLocation.y),
-        "request": live_car_positions
+        "position": [userLocation.x, userLocation.y],
+        "request": car_dict
     }
 
     async with httpx.AsyncClient() as client:
@@ -452,8 +456,9 @@ async def get_nearest_car(userLocation: LocationSchema):
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
 
-    nearest_data = response.json()  # Ejemplo: {"_id": C1}
+    nearest_data = response.json()  # Ej: {"_id": "879467412"}
     return {"nearest_car_id": nearest_data["_id"]}
+
 
 
 #Aquest endpoint ens retorna tota la informació d'un user donat el seu ID
@@ -1222,35 +1227,7 @@ from app.vehicles.router import router as vehicle_router
 app.include_router(vehicle_router)
 
 
-#live_car_positions_and_state = {}
 
-#async def connect_and_listen():
-#    uri = "ws://192.168.10.11:8766"
-#    print(f"Intentando conectar a WebSocket en {uri}")
-#    while True:
-#        try:
-#            async with websockets.connect(uri) as websocket:
-#                print("✅ Conectado al WebSocket remoto")
-#                async for message in websocket:
-#                    data = json.loads(message)
-#                    print("📨 Mensaje recibido:", data)
-#
-#                    car_id = str(data.get("id"))  # Convierte a string por consistencia
-#                    coords = data.get("coordinates", {})
-#                    state = str(data.get("state"))
-#                    x = coords.get("x")
-#                    y = coords.get("y")
-#
-#                    if car_id and x is not None and y is not None and state is not None:
-#                        live_car_positions_and_state[car_id] = (float(x), float(y), state)
-#                        print(f"🚗 Posición guardada: {car_id} -> ({x}, {y})")
-#                    else:
-#                        print(f"⚠️ Datos incompletos en mensaje: {data}")
-#
-#        except Exception as e:
-#            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
-#            await asyncio.sleep(5)    
-#-------------------------Endpoints localizacion e IA-----------------------------------
 
 
 live_car_positions_and_state = {}
