@@ -429,7 +429,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
 
 # 🚗 Endpoint para obtener el coche más cercano
-from fastapi import HTTPException
+
 
 @app.post("/api/getNearestCar")
 async def get_nearest_car(userLocation: LocationSchema):
