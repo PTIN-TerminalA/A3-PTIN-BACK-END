@@ -429,38 +429,49 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
 
 # 🚗 Endpoint para obtener el coche más cercano
+from fastapi import HTTPException
+
 @app.post("/api/getNearestCar")
 async def get_nearest_car(userLocation: LocationSchema):
     try:
         if not live_car_positions_and_state:
+            print("❌ No hay coches disponibles (live_car_positions_and_state está vacío)")
             raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
 
         car_dict = {}
         for car_id, car_info in live_car_positions_and_state.items():
-            position = car_info.get("position")
-            if position and hasattr(position, "x") and hasattr(position, "y"):
-                car_dict[str(car_id)] = [float(position.x), float(position.y)]
+            try:
+                x = car_info[0]
+                y = car_info[1]
+                car_dict[str(car_id)] = [float(x), float(y)]
+            except Exception as e:
+                print(f"⚠️ Error al procesar la posición del coche {car_id}: {e}")
 
         if not car_dict:
+            print("❌ No se pudieron extraer coordenadas válidas de los coches")
             raise HTTPException(status_code=404, detail="No s'han pogut obtenir coordenades dels cotxes")
-
-        print("DEBUG: car_dict =", car_dict)
-        print(f"DEBUG: userLocation = {userLocation}")
 
         payload = {
             "position": [userLocation.x, userLocation.y],
             "request": car_dict
         }
+        print(f"➡️ Enviando payload a servicio externo: {payload}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
             response.raise_for_status()
 
         nearest_data = response.json()
+        print(f"⬅️ Respuesta recibida: {nearest_data}")
+
         return {"nearest_car_id": nearest_data["_id"]}
+    except HTTPException:
+        # Re-lanzamos HTTPExceptions para que FastAPI las maneje como están
+        raise
     except Exception as e:
-        print(f"ERROR en getNearestCar: {e}")
+        print(f"❌ ERROR inesperado en get_nearest_car: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 
