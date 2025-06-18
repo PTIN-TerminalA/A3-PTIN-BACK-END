@@ -431,33 +431,37 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 # 🚗 Endpoint para obtener el coche más cercano
 @app.post("/api/getNearestCar")
 async def get_nearest_car(userLocation: LocationSchema):
-    if not live_car_positions_and_state:
-        raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
+    try:
+        if not live_car_positions_and_state:
+            raise HTTPException(status_code=404, detail="No s'han trobat cotxes disponibles")
 
-    # Extraer coordenadas de cada coche desde el diccionario recibido por WebSocket
-    car_dict = {}
-    for car_id, car_info in live_car_positions_and_state.items():
-        position = car_info.get("position")
-        if position and hasattr(position, "x") and hasattr(position, "y"):
-            car_dict[str(car_id)] = [float(position.x), float(position.y)]
+        car_dict = {}
+        for car_id, car_info in live_car_positions_and_state.items():
+            position = car_info.get("position")
+            if position and hasattr(position, "x") and hasattr(position, "y"):
+                car_dict[str(car_id)] = [float(position.x), float(position.y)]
 
-    if not car_dict:
-        raise HTTPException(status_code=404, detail="No s'han pogut obtenir coordenades dels cotxes")
+        if not car_dict:
+            raise HTTPException(status_code=404, detail="No s'han pogut obtenir coordenades dels cotxes")
 
-    payload = {
-        "position": [userLocation.x, userLocation.y],
-        "request": car_dict
-    }
+        print("DEBUG: car_dict =", car_dict)
+        print(f"DEBUG: userLocation = {userLocation}")
 
-    async with httpx.AsyncClient() as client:
-        try:
+        payload = {
+            "position": [userLocation.x, userLocation.y],
+            "request": car_dict
+        }
+
+        async with httpx.AsyncClient() as client:
             response = await client.post("http://10.60.0.3:1111/getNearest", json=payload)
             response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
 
-    nearest_data = response.json()  # Ej: {"_id": "879467412"}
-    return {"nearest_car_id": nearest_data["_id"]}
+        nearest_data = response.json()
+        return {"nearest_car_id": nearest_data["_id"]}
+    except Exception as e:
+        print(f"ERROR en getNearestCar: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 
