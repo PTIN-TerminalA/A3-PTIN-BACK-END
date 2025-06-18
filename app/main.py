@@ -22,6 +22,7 @@ from app.models.user import User
 import smtplib
 from email.mime.text import MIMEText
 import os
+import traceback
 
 # --- SQL imports ---
 from app.database import get_db
@@ -466,11 +467,11 @@ async def get_nearest_car(userLocation: LocationSchema):
 
         return {"nearest_car_id": nearest_data["_id"]}
     except HTTPException:
-        # Re-lanzamos HTTPExceptions para que FastAPI las maneje como están
         raise
     except Exception as e:
+        print("❌ ERROR inesperado en get_nearest_car:")
+        traceback.print_exc()
         detalle_error = str(e) or "Error inesperado sin mensaje"
-        print(f"❌ ERROR inesperado en get_nearest_car: {detalle_error}")
         raise HTTPException(status_code=500, detail=detalle_error)
 
 
