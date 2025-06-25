@@ -749,6 +749,81 @@ async def inicia_trajecte(
 
 
 
+
+@app.post("/api/finalitza-trajecte")
+async def finalitza_trajecte(
+    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    db_mongo=Depends(get_mongo_db),
+    db_sql: Session = Depends(get_db)
+):
+    """
+    Finalitza el trajecte actual del usuario:
+    1) Troba la ruta més recent del usuario
+    2) Canvia l'estat del cotxe a "Disponible"
+    3) Canvia l'estat de la ruta a "Finalitzada"
+    """
+    try:
+        # # Autenticación por token (comentado por ahora)
+        # payload_token = decode_access_token(creds.credentials)
+        # user_id = int(payload_token.get("sub"))
+        
+        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
+        user_id = 44
+
+        # 1) Buscar la ruta más reciente del usuario que esté "En curs"
+        last_route = await db_mongo["route"].find_one(
+            {"user_id": user_id, "state": "En curs"},
+            sort=[("scheduled_time", -1)]
+        )
+        
+        if not last_route:
+            raise HTTPException(404, "No s'ha trobat cap trajecte actiu per finalitzar.")
+
+        car_id = last_route.get("car_id")
+        if not car_id:
+            raise HTTPException(500, "El trajecte no té un cotxe assignat.")
+
+        # 2) Cambiar estado del coche a "Disponible"
+        car_update_result = await db_mongo["car"].update_one(
+            {"_id": car_id},
+            {"$set": {"state": "Disponible"}}
+        )
+        
+        if car_update_result.matched_count == 0:
+            raise HTTPException(404, f"No s'ha trobat el cotxe amb ID {car_id}.")
+
+        # 3) Cambiar estado de la ruta a "Finalitzada"
+        route_update_result = await db_mongo["route"].update_one(
+            {"_id": last_route["_id"]},
+            {"$set": {"state": "Finalitzada"}}
+        )
+        
+        if route_update_result.matched_count == 0:
+            raise HTTPException(500, "No s'ha pogut actualitzar l'estat de la ruta.")
+
+        # 4) Actualizar también el historial del usuario
+        await db_mongo["user"].update_one(
+            {"id": user_id, "route_history._id": last_route["_id"]},
+            {"$set": {"route_history.$.state": "Finalitzada"}}
+        )
+
+        return {
+            "message": "Trajecte finalitzat correctament.",
+            "car_id": str(car_id),
+            "route_id": str(last_route["_id"]),
+            "end_location": last_route.get("end_location", "Desconegut")
+        }
+
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
+
+
+
+
 # --- POST /reserves/usuari (reservacotxe) ---
 @app.post("/api/reserves/usuari")
 async def create_route_user(
