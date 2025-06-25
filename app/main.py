@@ -1425,8 +1425,12 @@ async def rate_service(
     - rating: Valoración del servicio (0.01 - 5).
     - comment: Comentario opcional sobre el servicio.
     """
+    # Validar rango de rating - Error 422 (Unprocessable Entity)
     if rating < 0.01 or rating > 5:
-        raise HTTPException(status_code=400, detail="La valoració ha de ser entre 0.01 i 9.99.")
+        raise HTTPException(
+            status_code=422, 
+            detail="La valoració ha de ser entre 0.01 i 5.00."
+        )
 
     # Decodificar el token para obtener el user_id
     payload = decode_access_token(creds.credentials)
@@ -1437,13 +1441,16 @@ async def rate_service(
     if not service:
         raise HTTPException(status_code=404, detail="Servei no trobat.")
 
-    # Comprobar si el usuario ya ha valorado este servicio
+    # Comprobar si el usuario ya ha valorado este servicio - Error 409 (Conflict)
     existing_rating = db.query(Valoration).filter(
         Valoration.service_id == service_id,
         Valoration.user_id == user_id
     ).first()
     if existing_rating:
-        raise HTTPException(status_code=400, detail="Ja has valorat aquest servei.")
+        raise HTTPException(
+            status_code=409, 
+            detail="Ja has valorat aquest servei."
+        )
 
     # Crear la valoración
     new_rating = Valoration(
