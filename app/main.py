@@ -1376,6 +1376,29 @@ async def connect_and_listen():
             await asyncio.sleep(5)   
 #-------------------------Endpoints localizacion e IA-----------------------------------
 
+#para comprobar si se llena el diccionario
+@app.get("/api/debug/live-car-positions")
+async def debug_live_car_positions():
+    """
+    Devuelve el estado interno de live_car_positions_and_state
+    para que puedas ver si está vacío o qué contiene.
+    """
+    # Convierte las claves a string para JSON
+    return {
+        "count": len(live_car_positions_and_state),
+        "cars": {
+            str(k): {
+                "x": v[0],
+                "y": v[1],
+                "state": v[2]
+            }
+            for k, v in live_car_positions_and_state.items()
+        }
+    }
+
+
+
+
 #para la app
 
 @app.get("/api/cotxe/{cotxe_id}/status")
