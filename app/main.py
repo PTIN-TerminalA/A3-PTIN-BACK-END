@@ -1383,16 +1383,21 @@ async def get_car_status(
     cotxe_id: str,
     db=Depends(get_mongo_db)
 ):
-    # 1) Obtener posición desde el diccionario global
+    # 1) Intentar obtener la posición con la clave string
     pos = live_car_positions_and_state.get(cotxe_id)
+    if pos is None:
+        # 1b) Si no existe, probar con entero
+        try:
+            pos = live_car_positions_and_state.get(int(cotxe_id))
+        except ValueError:
+            pos = None
+
     if pos is None:
         raise HTTPException(status_code=404, detail=f"No s'ha trobat la posició del cotxe {cotxe_id}")
 
-    # 2) Obtener estado desde MongoDB
-    #car_doc = await db["car"].find_one({"_id": cotxe_id}, {"state": "stopped"})
-
-    #if not car_doc:
-    #    raise HTTPException(status_code=404, detail=f"No s'ha trobat el cotxe {cotxe_id} a la BDD")
+    # 2) Obtener estado desde MongoDB (si lo necesitas)
+    # car_doc = await db["car"].find_one({"_id": cotxe_id}, {"state": 1})
+    # state = car_doc.get("state") if car_doc else None
 
     # 3) Devolver resultado
     return {
