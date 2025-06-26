@@ -1324,62 +1324,59 @@ app.include_router(vehicle_router)
 
 
 
-# Definimos Punt para usarlo en eval()
-Punt = namedtuple('Punt', ['x', 'y'])
-
 live_car_positions_and_state = {}
 
 async def connect_and_listen():
     uri = "ws://192.168.10.11:8766"
-    prefix = "Vehicles actualitzats: "
     print(f"Intentando conectar a WebSocket en {uri}")
-
     while True:
         try:
             async with websockets.connect(uri) as websocket:
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
-                    # 1) Si empieza por el prefijo, extraemos dict_str
-                    if message.startswith(prefix):
-                        dict_str = message[len(prefix):].strip()
-                        try:
-                            # Eval en namespace controlado
-                            data_dict = eval(
-                                dict_str,
-                                {"__builtins__": {}},
-                                {"Punt": Punt}
-                            )
-                        except Exception as e:
-                            print(f"⚠️ Error parsing vehicles dict: {e}")
-                            continue
-
-                        # 2) Convertimos y almacenamos posiciones
-                        for car_id, info in data_dict.items():
-                            try:
-                                pos = info['position']   # es un Punt
-                                state = info['state']
-                                x, y = float(pos.x), float(pos.y)
-                                live_car_positions_and_state[str(car_id)] = (x, y, state)
-                            except Exception as e:
-                                print(f"⚠️ Error procesando entry {car_id}: {e}")
-
-                        # 3) DEBUG: mostramos cuántos coches tenemos
-                        print(f"🔢 Total coches en memoria: {len(live_car_positions_and_state)}")
-
-                    else:
-                        # Si algún otro formato JSON puro llega, lo podrías manejar aquí
-                        try:
-                            raw = json.loads(message)
-                            print("ℹ️ Mensaje JSON recibido (no prefix):", raw)
-                        except json.JSONDecodeError:
-                            print("⚠️ Mensaje no reconocido:", message)
-
+                    try:
+                        data = json.loads(message)
+                        print("📨 Mensaje recibido:", data)
+                        
+                        # El formato esperado es un diccionario donde las claves son los IDs
+                        # y los valores tienen 'position' y 'state'
+                        for car_id, car_data in data.items():
+                            car_id = str(car_id)  # Convierte a string por consistencia
+                            
+                            # Extrae la posición y el estado
+                            position = car_data.get("position", {})
+                            state = car_data.get("state")
+                            
+                            # La posición puede venir como objeto Punt o como dict con x,y
+                            if hasattr(position, 'x') and hasattr(position, 'y'):
+                                # Si es un objeto Punt
+                                x = position.x
+                                y = position.y
+                            elif isinstance(position, dict):
+                                # Si es un diccionario
+                                x = position.get("x")
+                                y = position.get("y")
+                            else:
+                                print(f"⚠️ Formato de posición no reconocido para {car_id}: {position}")
+                                continue
+                            
+                            if x is not None and y is not None and state is not None:
+                                live_car_positions_and_state[car_id] = (float(x), float(y), str(state))
+                                print(f"🚗 Posición guardada: {car_id} -> ({x}, {y}, {state})")
+                            else:
+                                print(f"⚠️ Datos incompletos para vehículo {car_id}: x={x}, y={y}, state={state}")
+                                
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️ Error al decodificar JSON: {e}")
+                    except Exception as e:
+                        print(f"⚠️ Error procesando mensaje: {e}")
+                        
         except Exception as e:
             print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
-            await asyncio.sleep(5)
+            await asyncio.sleep(5)   
 #-------------------------Endpoints localizacion e IA-----------------------------------
 
-#para comprobar si se llena el diccionario
+#para comprobar si se llena el diccionario 
 @app.get("/api/debug/live-car-positions")
 async def debug_live_car_positions():
     """
@@ -1700,29 +1697,16 @@ connected_websockets = set()
 # 'coordinates': {'x': 0.4202597402597403, 'y': 0.10962767957878902}
 # }
 
-connected_websockets: set[WebSocket] = set()
-
 @app.websocket("/ws/cars")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    Endpoint WebSocket para que los clientes se conecten y reciban
-    broadcast de las posiciones de los coches en tiempo real.
-    """
-    # Aceptar la conexión entrante
     await websocket.accept()
     connected_websockets.add(websocket)
-    print(f"🛰 Cliente conectado: {websocket.client.host}:{websocket.client.port}")
-
     try:
-        # Mantener la conexión viva sin esperar datos del cliente
         while True:
-            await asyncio.sleep(60)
+            # Espera mensajes del cliente (opcional, aquí solo hacemos broadcast)
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        # El cliente se ha desconectado
-        print(f"❌ Cliente desconectado: {websocket.client.host}:{websocket.client.port}")
-    finally:
-        # Asegurar la eliminación del socket del set
-        connected_websockets.discard(websocket)
+        connected_websockets.remove(websocket)
 
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
 async def connect_and_listen_cars():
