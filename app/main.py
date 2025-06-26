@@ -1334,46 +1334,23 @@ async def connect_and_listen():
             async with websockets.connect(uri) as websocket:
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        print("📨 Mensaje recibido:", data)
-                        
-                        # El formato esperado es un diccionario donde las claves son los IDs
-                        # y los valores tienen 'position' y 'state'
-                        for car_id, car_data in data.items():
-                            car_id = str(car_id)  # Convierte a string por consistencia
-                            
-                            # Extrae la posición y el estado
-                            position = car_data.get("position", {})
-                            state = car_data.get("state")
-                            
-                            # La posición puede venir como objeto Punt o como dict con x,y
-                            if hasattr(position, 'x') and hasattr(position, 'y'):
-                                # Si es un objeto Punt
-                                x = position.x
-                                y = position.y
-                            elif isinstance(position, dict):
-                                # Si es un diccionario
-                                x = position.get("x")
-                                y = position.get("y")
-                            else:
-                                print(f"⚠️ Formato de posición no reconocido para {car_id}: {position}")
-                                continue
-                            
-                            if x is not None and y is not None and state is not None:
-                                live_car_positions_and_state[car_id] = (float(x), float(y), str(state))
-                                print(f"🚗 Posición guardada: {car_id} -> ({x}, {y}, {state})")
-                            else:
-                                print(f"⚠️ Datos incompletos para vehículo {car_id}: x={x}, y={y}, state={state}")
-                                
-                    except json.JSONDecodeError as e:
-                        print(f"⚠️ Error al decodificar JSON: {e}")
-                    except Exception as e:
-                        print(f"⚠️ Error procesando mensaje: {e}")
-                        
+                    data = json.loads(message)
+                    # Nuevo parsing acorde al mensaje real:
+                    car_id  = str(data.get("id"))
+                    state   = data.get("state")
+                    coords  = data.get("coordinates", {})
+                    x       = coords.get("x")
+                    y       = coords.get("y")
+                    
+                    if car_id and x is not None and y is not None and state is not None:
+                        live_car_positions_and_state[car_id] = (float(x), float(y), str(state))
+                        print(f"🚗 Posición guardada: {car_id} -> ({x}, {y}, {state})")
+                    else:
+                        print(f"⚠️ Datos incompletos en mensaje: {data}")
+
         except Exception as e:
             print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
-            await asyncio.sleep(5)   
+            await asyncio.sleep(5)
 #-------------------------Endpoints localizacion e IA-----------------------------------
 
 #para comprobar si se llena el diccionario
