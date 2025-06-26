@@ -55,7 +55,6 @@ app = FastAPI()
 
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(connect_and_listen())
     asyncio.create_task(connect_and_listen_cars())
     
 # 🔓 CORS (permitir React en :5173)
@@ -1325,10 +1324,11 @@ app.include_router(vehicle_router)
 
 
 live_car_positions_and_state = {}
+connected_websockets = set()
 
-async def connect_and_listen():
+async def connect_and_listen_cars():
+    print("🔗 Conectando al WebSocket remoto para recibir posiciones de coches...")
     uri = "ws://192.168.10.11:8766"
-    print(f"Intentando conectar a WebSocket en {uri}")
     while True:
         try:
             async with websockets.connect(uri) as websocket:
@@ -1338,6 +1338,7 @@ async def connect_and_listen():
                         data = json.loads(message)
                         print("📨 Mensaje recibido:", data)
                         
+                        # 1. ALMACENAR EN EL DICCIONARIO
                         # El formato esperado es un diccionario donde las claves son los IDs
                         # y los valores tienen 'position' y 'state'
                         for car_id, car_data in data.items():
@@ -1365,15 +1366,25 @@ async def connect_and_listen():
                                 print(f"🚗 Posición guardada: {car_id} -> ({x}, {y}, {state})")
                             else:
                                 print(f"⚠️ Datos incompletos para vehículo {car_id}: x={x}, y={y}, state={state}")
-                                
+                        
+                        # 2. BROADCAST A CLIENTES WEB
+                        # Broadcast a todos los clientes conectados
+                        to_remove = set()
+                        for ws in connected_websockets:
+                            try:
+                                await ws.send_json(data)
+                            except Exception:
+                                to_remove.add(ws)
+                        connected_websockets.difference_update(to_remove)
+                        
                     except json.JSONDecodeError as e:
                         print(f"⚠️ Error al decodificar JSON: {e}")
                     except Exception as e:
                         print(f"⚠️ Error procesando mensaje: {e}")
                         
         except Exception as e:
-            print(f"⚠️ Error de conexión: {e} — Reintentando en 5 segundos...")
-            await asyncio.sleep(5)   
+            print(f"⚠️ Error de conexión: {e}")
+            await asyncio.sleep(5)
 #-------------------------Endpoints localizacion e IA-----------------------------------
 
 #para comprobar si se llena el diccionario 
@@ -1708,7 +1719,9 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         connected_websockets.remove(websocket)
 
-# 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
+live_car_positions_and_state = {}
+connected_websockets = set()
+
 async def connect_and_listen_cars():
     print("🔗 Conectando al WebSocket remoto para recibir posiciones de coches...")
     uri = "ws://192.168.10.11:8766"
@@ -1717,17 +1730,56 @@ async def connect_and_listen_cars():
             async with websockets.connect(uri) as websocket:
                 print("✅ Conectado al WebSocket remoto")
                 async for message in websocket:
-                    data = json.loads(message)
-                    print("📨 Mensaje recibido:", data)
-                    # Broadcast a todos los clientes conectados
-                    to_remove = set()
-                    for ws in connected_websockets:
-                        try:
-                            await ws.send_json(data)
-                        except Exception:
-                            to_remove.add(ws)
-                    connected_websockets.difference_update(to_remove)
+                    try:
+                        data = json.loads(message)
+                        print("📨 Mensaje recibido:", data)
+                        
+                        # 1. ALMACENAR EN EL DICCIONARIO
+                        # El formato esperado es un diccionario donde las claves son los IDs
+                        # y los valores tienen 'position' y 'state'
+                        for car_id, car_data in data.items():
+                            car_id = str(car_id)  # Convierte a string por consistencia
+                            
+                            # Extrae la posición y el estado
+                            position = car_data.get("position", {})
+                            state = car_data.get("state")
+                            
+                            # La posición puede venir como objeto Punt o como dict con x,y
+                            if hasattr(position, 'x') and hasattr(position, 'y'):
+                                # Si es un objeto Punt
+                                x = position.x
+                                y = position.y
+                            elif isinstance(position, dict):
+                                # Si es un diccionario
+                                x = position.get("x")
+                                y = position.get("y")
+                            else:
+                                print(f"⚠️ Formato de posición no reconocido para {car_id}: {position}")
+                                continue
+                            
+                            if x is not None and y is not None and state is not None:
+                                live_car_positions_and_state[car_id] = (float(x), float(y), str(state))
+                                print(f"🚗 Posición guardada: {car_id} -> ({x}, {y}, {state})")
+                            else:
+                                print(f"⚠️ Datos incompletos para vehículo {car_id}: x={x}, y={y}, state={state}")
+                        
+                        # 2. BROADCAST A CLIENTES WEB
+                        # Broadcast a todos los clientes conectados
+                        to_remove = set()
+                        for ws in connected_websockets:
+                            try:
+                                await ws.send_json(data)
+                            except Exception:
+                                to_remove.add(ws)
+                        connected_websockets.difference_update(to_remove)
+                        
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️ Error al decodificar JSON: {e}")
+                    except Exception as e:
+                        print(f"⚠️ Error procesando mensaje: {e}")
+                        
         except Exception as e:
+            print(f"⚠️ Error de conexión: {e}")
             await asyncio.sleep(5)
             
             
