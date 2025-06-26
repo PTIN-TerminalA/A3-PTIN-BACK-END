@@ -1098,7 +1098,7 @@ async def update_profile(
 #Endpoint que modifica l'estat d'un cotxe a "Esperant" donat el seu ID.
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
-@app.put("/cotxe/{cotxe_id}/esperant")
+@app.put("/api/cotxe/{cotxe_id}/esperant")
 async def state_car_waiting(cotxe_id: str, db=Depends(get_mongo_db)):
    
     # Busquem el cotxe a la base de dades
@@ -1241,7 +1241,7 @@ async def get_all_services(db: Session = Depends(get_db)):
 #Endpoint que modifica l'estat d'un cotxe a "Esperant" donat el seu ID.
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
-@app.put("/cotxe/{cotxe_id}/esperant")
+@app.put("/api/cotxe/{cotxe_id}/esperant")
 async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
    
     # Busquem el cotxe a la base de dades
@@ -1261,7 +1261,7 @@ async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
 #Endpoint que modifica l'estat d'un cotxe a "En curs" donat el seu ID.
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/en_curs
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "En curs"
-@app.put("/cotxe/{cotxe_id}/en_curs")
+@app.put("/api/cotxe/{cotxe_id}/en_curs")
 async def state_car_in_progress(cotxe_id: str, db=Depends(get_mongo_db)):
    
     # Busquem el cotxe a la base de dades
@@ -1281,7 +1281,7 @@ async def state_car_in_progress(cotxe_id: str, db=Depends(get_mongo_db)):
 #Endpoint que modifica l'estat d'un cotxe a "Solicitat" donat el seu ID.
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/solicitat
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "Solicitat"
-@app.put("/cotxe/{cotxe_id}/solicitat")
+@app.put("/api/cotxe/{cotxe_id}/solicitat")
 async def state_car_requested(cotxe_id: str, db=Depends(get_mongo_db)):
    
     # Busquem el cotxe a la base de dades
@@ -1301,7 +1301,7 @@ async def state_car_requested(cotxe_id: str, db=Depends(get_mongo_db)):
 #Endpoint que modifica l'estat d'un cotxe a "Disponible" donat el seu ID.
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/disponible
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "Disponible"
-@app.put("/cotxe/{cotxe_id}/disponible")
+@app.put("/api/cotxe/{cotxe_id}/disponible")
 async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
    
     # Busquem el cotxe a la base de dades
