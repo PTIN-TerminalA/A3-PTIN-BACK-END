@@ -1700,16 +1700,29 @@ connected_websockets = set()
 # 'coordinates': {'x': 0.4202597402597403, 'y': 0.10962767957878902}
 # }
 
+connected_websockets: set[WebSocket] = set()
+
 @app.websocket("/ws/cars")
 async def websocket_endpoint(websocket: WebSocket):
+    """
+    Endpoint WebSocket para que los clientes se conecten y reciban
+    broadcast de las posiciones de los coches en tiempo real.
+    """
+    # Aceptar la conexión entrante
     await websocket.accept()
     connected_websockets.add(websocket)
+    print(f"🛰 Cliente conectado: {websocket.client.host}:{websocket.client.port}")
+
     try:
+        # Mantener la conexión viva sin esperar datos del cliente
         while True:
-            # Espera mensajes del cliente (opcional, aquí solo hacemos broadcast)
-            await websocket.receive_text()
+            await asyncio.sleep(60)
     except WebSocketDisconnect:
-        connected_websockets.remove(websocket)
+        # El cliente se ha desconectado
+        print(f"❌ Cliente desconectado: {websocket.client.host}:{websocket.client.port}")
+    finally:
+        # Asegurar la eliminación del socket del set
+        connected_websockets.discard(websocket)
 
 # 👂 Cliente que se conecta al WebSocket remoto y escucha mensajes
 async def connect_and_listen_cars():
