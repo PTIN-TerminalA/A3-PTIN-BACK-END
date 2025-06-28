@@ -9,8 +9,8 @@ from datetime import timedelta
 from argon2 import PasswordHasher
 from bson import ObjectId
 from fastapi import Path
-from datetime import datetime
-from typing import List
+from datetime import datetime, date
+from typing import List, Dict, Any, Optional
 import httpx
 import asyncio
 import websockets
@@ -1243,9 +1243,16 @@ async def get_all_services(db: Session = Depends(get_db)):
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
 @app.put("/api/cotxe/{cotxe_id}/esperant")
 async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
-   
-    # Busquem el cotxe a la base de dades
-    car = await db["car"].find_one({"_id": cotxe_id})
+    
+    query_id = cotxe_id
+
+    car = await db["car"].find_one({"_id": query_id})
+
+    # 2) Si no el troba i cotxe_id era tot dígits, prova com a número
+    if not car and cotxe_id.isdigit():
+        query_id = int(cotxe_id)
+        car = await db["car"].find_one({"_id": query_id})
+
     if not car:
         raise HTTPException(status_code=404, detail="Cotxe no trobat.")
 
@@ -1264,8 +1271,15 @@ async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
 @app.put("/api/cotxe/{cotxe_id}/en_curs")
 async def state_car_in_progress(cotxe_id: str, db=Depends(get_mongo_db)):
    
-    # Busquem el cotxe a la base de dades
-    car = await db["car"].find_one({"_id": cotxe_id})
+    query_id = cotxe_id
+
+    car = await db["car"].find_one({"_id": query_id})
+
+    # 2) Si no el troba i cotxe_id era tot dígits, prova com a número
+    if not car and cotxe_id.isdigit():
+        query_id = int(cotxe_id)
+        car = await db["car"].find_one({"_id": query_id})
+
     if not car:
         raise HTTPException(status_code=404, detail="Cotxe no trobat.")
 
@@ -1284,8 +1298,15 @@ async def state_car_in_progress(cotxe_id: str, db=Depends(get_mongo_db)):
 @app.put("/api/cotxe/{cotxe_id}/solicitat")
 async def state_car_requested(cotxe_id: str, db=Depends(get_mongo_db)):
    
-    # Busquem el cotxe a la base de dades
-    car = await db["car"].find_one({"_id": cotxe_id})
+    query_id = cotxe_id
+
+    car = await db["car"].find_one({"_id": query_id})
+
+    # 2) Si no el troba i cotxe_id era tot dígits, prova com a número
+    if not car and cotxe_id.isdigit():
+        query_id = int(cotxe_id)
+        car = await db["car"].find_one({"_id": query_id})
+
     if not car:
         raise HTTPException(status_code=404, detail="Cotxe no trobat.")
 
@@ -1304,8 +1325,15 @@ async def state_car_requested(cotxe_id: str, db=Depends(get_mongo_db)):
 @app.put("/api/cotxe/{cotxe_id}/disponible")
 async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
    
-    # Busquem el cotxe a la base de dades
-    car = await db["car"].find_one({"_id": cotxe_id})
+    query_id = cotxe_id
+
+    car = await db["car"].find_one({"_id": query_id})
+
+    # 2) Si no el troba i cotxe_id era tot dígits, prova com a número
+    if not car and cotxe_id.isdigit():
+        query_id = int(cotxe_id)
+        car = await db["car"].find_one({"_id": query_id})
+
     if not car:
         raise HTTPException(status_code=404, detail="Cotxe no trobat.")
 
@@ -1806,3 +1834,205 @@ async def reset_password(
             
             
 #-------------------------Endpoints localizacion e IA-----------------------------------
+
+
+#-------------------------Endpoints Users-----------------------------------------------
+
+
+
+@app.delete("/api/users/{user_id}/full")
+async def delete_user_full(user_id: int, db: Session = Depends(get_db)):
+    # 1) Esborra directament les prefències a la taula 'preferences'
+    db.execute(
+        text("DELETE FROM preferences WHERE id = :id"),
+        {"id": user_id}
+    )
+
+    # 2) Esborra la fila de Regular (dades addicionals)
+    reg = db.query(Regular).filter(Regular.id == user_id).first()
+    if reg:
+        db.delete(reg)
+
+    # 3) Esborra la fila de User
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuari no trobat")
+    db.delete(user)
+
+    # 4) Commit unificat
+    db.commit()
+
+@app.get("/api/users")
+async def list_users(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    # Comptar només usuaris tipus 1
+    total = db.query(User).filter(User.usertype == 1).count()
+
+    # Consultar paginat
+    users_q = (
+        db.query(User)
+          .filter(User.usertype == 1)
+          .offset(offset)
+          .limit(limit)
+          .all()
+    )
+
+    result = []
+    for u in users_q:
+        reg = db.query(Regular).filter(Regular.id == u.id).first()
+
+        # Si encara vols provar de desencriptar, fes-ho amb fallback:
+        # try:
+        #     plain_dni = decrypt_dni(u.dni)
+        # except Exception:
+        #     plain_dni = u.dni
+        # Però si no el desencriptes, simplement:
+        plain_dni = u.dni
+
+        result.append({
+            "id":         u.id,
+            "name":       u.name,
+            "dni":        plain_dni,
+            "email":      u.email,
+            "birth_date": reg.birth_date.isoformat() if (reg and reg.birth_date) else None,
+            "phone_num":  reg.phone_num  if reg else None,
+            "identity":   reg.identity   if reg else None,
+            "gender":     reg.identity   if reg else None,
+        })
+
+    return {
+        "total":  total,
+        "limit":  limit,
+        "offset": offset,
+        "users":  result
+    }
+
+@app.get("/api/users/{user_id}")
+async def get_user_details(user_id: int, db: Session = Depends(get_db)):
+    """
+    Retorna la informació completa d’un usuari:
+      - name, email, dni              (de la taula User)
+      - birth_date, phone_num, identity (de la taula Regular, si existeix)
+    """
+    # 1) Busquem l’usuari
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuari no trobat")
+
+    # 2) Si té fila a Regular, l’agafem
+    reg = db.query(Regular).filter(Regular.id == user_id).first()
+    
+    #decrypted_dni = decrypt_dni(user.dni)
+
+
+    # 3) Retornem tots els camps
+    return {
+        "id":          user.id,
+        "name":        user.name,
+        "email":       user.email,
+        "dni":         user.dni,
+        "birth_date":  reg.birth_date.isoformat() if reg and reg.birth_date else None,
+        "phone_num":   reg.phone_num if reg else None,
+        "identity":    reg.identity  if reg else None,
+        "gender":    reg.identity  if reg else None,
+    }
+
+@app.get("/api/users/search")
+async def search_users_by_email(
+    email: str = Query(..., description="Fragment a cercar dins l'email"),
+    db: Session = Depends(get_db)
+):
+    users = (
+        db.query(User)
+          .filter(User.usertype == 1)
+          .filter(User.email.ilike(f"%{email}%"))
+          .all()
+    )
+
+    result = []
+    for u in users:
+        reg = db.query(Regular).filter(Regular.id == u.id).first()
+        result.append({
+            "id":         u.id,
+            "name":       u.name,
+            "dni":        u.dni,  # o plain_dni com abans
+            "email":      u.email,
+            "birth_date": reg.birth_date.isoformat() if (reg and reg.birth_date) else None,
+            "phone_num":  reg.phone_num  if reg else None,
+            "identity":   reg.identity   if reg else None,
+            "gender":     reg.identity   if reg else None,
+        })
+    return result
+
+@app.patch("/api/users/{editingId}/full")
+async def update_user_full(
+    editingId: int = Path(..., ge=1),
+    name: Optional[str] = Body(None),
+    birth_date: Optional[date] = Body(None),
+    phone_num: Optional[str] = Body(None),
+    gender: Optional[str] = Body(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Actualitza name (User) i birth_date, phone_num, identity (Regular).
+    Cualsevol camp que vingui a null no es modifica.
+    """
+    # 1) Busquem l’usuari bàsic
+    user = db.query(User).filter(User.id == editingId).first()
+    if not user:
+        raise HTTPException(404, "Usuari no trobat")
+
+    # 2) Si ens arriba name, l’actualitzem
+    if name is not None:
+        user.name = name
+        db.add(user)
+
+    # 3) Busquem l’entrada Regular
+    reg = db.query(Regular).filter(Regular.id == editingId).first()
+    if not reg:
+        raise HTTPException(404, "Dades addicionals no trobades")
+
+    # 4) Actualitzem només els camps no nuls
+    if birth_date is not None:
+        reg.birth_date = birth_date
+    if phone_num is not None:
+        reg.phone_num = phone_num
+    if gender is not None:
+        reg.identity = gender
+
+    db.add(reg)
+    db.commit()
+
+    return {
+        "name":       user.name,
+        "birth_date": reg.birth_date,
+        "phone_num":  reg.phone_num,
+        "gender":     reg.identity,
+    }
+
+@app.get("/api/cars", response_model=List[Dict[str, Any]])
+async def list_cars(db = Depends(get_mongo_db)):
+    """
+    Retorna tots els documents de la col·lecció `car`,
+    amb els camps:
+      - _id
+      - state
+      - battery_level  (el camp a Mongo és `battery`)
+    """
+    # Fem la consulta a Mongo
+    cursor = db["car"].find({})
+    carros = await cursor.to_list(length=None)
+
+    # Construeix la resposta
+    resultat = []
+    for c in carros:
+        resultat.append({
+            "_id": str(c.get("_id")),
+            "state": c.get("state"),
+            "battery_level": c.get("battery"),
+        })
+
+    return resultat
