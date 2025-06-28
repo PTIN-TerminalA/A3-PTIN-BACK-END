@@ -381,7 +381,7 @@ async def getValoration(service_id: int, db: Session = Depends(get_db)):
 #Aquest endpoint ens retorna la posició d'un usuari donat un payload de mesures wifi
 @app.post("/api/getUserPosition")
 async def getUserPosition(payload: WifiMeasuresList):
-    ai_url = "http://10.60.0.3:2222/localize" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
+    ai_url = "http://10.60.0.3:2222/localizeUser" #Hay que canmbiarla en produccion por la que esté alojando la api de la IA
 
     try:
         async with httpx.AsyncClient() as client:
