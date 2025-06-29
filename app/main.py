@@ -601,14 +601,10 @@ async def create_basic_route(
     if not car:
         raise HTTPException(status_code=400, detail="No hay coches disponibles.")
     car_id = car["_id"]
-    # Convertir el id a hexadecimal tipo 0x...
-    if isinstance(car_id, int):
-        car_id_hex = hex(car_id)
-    elif isinstance(car_id, str) and car_id.isdigit():
-        car_id_hex = hex(int(car_id))
-    else:
-        # Si es ObjectId u otro tipo, usar str()
-        car_id_hex = str(car_id)
+    
+    if not isinstance(car_id, int):
+        raise HTTPException (status_code=500, detail =f"El _id del coche no es un entero: {car_id}")
+
     # 4) Recuperar coordenadas del servicio de SQL
     service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
     if not service_obj:
@@ -616,8 +612,11 @@ async def create_basic_route(
     target_x = float(service_obj.location_x)
     target_y = 1 - float(service_obj.location_y)  # Transformación: 1-y
 
-    # 5) Llamada al controlador externo con el id en hexadecimal
-    payload_ctrl = {"id": (f"0x{car_id_hex[2:].upper()}"), "desti": {"x": target_x, "y": target_y}}
+    # 5) Llamada al controlador externo - CORREGIDO
+    payload_ctrl = {
+        "id": str(car_id),  # Usar car_id directamente como string
+        "desti": {"x": target_x, "y": target_y}
+    }
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
