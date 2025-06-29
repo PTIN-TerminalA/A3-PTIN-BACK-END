@@ -430,8 +430,6 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
 
 # 🚗 Endpoint para obtener el coche más cercano
-
-
 @app.post("/api/getNearestCar")
 async def get_nearest_car(userLocation: LocationSchema):
     try:
@@ -581,11 +579,11 @@ async def create_basic_route(
     # 1) Validar y extraer ubicación del usuario
     loc = payload.get("location")
     if not loc or not isinstance(loc, dict):
-        raise HTTPException(status_code=400, detail="Debes enviar 'location' con 'x' y 'y'.")
+        raise HTTPException(status_code=400, detail="Debes enviar 'location' amb 'x' i 'y'.")
     try:
         user_location = LocationSchema(x=loc["x"], y=loc["y"])
     except Exception:
-        raise HTTPException(status_code=400, detail="Formato inválido para 'location'.")
+        raise HTTPException(status_code=400, detail="Format inválid per a 'location'.")
 
     # 2) Validar end_location
     end_loc = payload.get("end_location")
@@ -598,6 +596,19 @@ async def create_basic_route(
     if service_id is None:
         raise HTTPException(status_code=500, detail="No se obtuvo servicio cercano.")
 
+    # 4) Buscar coche disponible y obtener su _id
+    car = await db_mongo["car"].find_one({"state": "Disponible"})
+    if not car:
+        raise HTTPException(status_code=400, detail="No hay coches disponibles.")
+    car_id = car["_id"]
+    # Convertir el id a hexadecimal tipo 0x...
+    if isinstance(car_id, int):
+        car_id_hex = hex(car_id)
+    elif isinstance(car_id, str) and car_id.isdigit():
+        car_id_hex = hex(int(car_id))
+    else:
+        # Si es ObjectId u otro tipo, usar str()
+        car_id_hex = str(car_id)
     # 4) Recuperar coordenadas del servicio de SQL
     service_obj = db_sql.query(Service).filter(Service.id == service_id).first()
     if not service_obj:
@@ -605,8 +616,8 @@ async def create_basic_route(
     target_x = float(service_obj.location_x)
     target_y = 1 - float(service_obj.location_y)  # Transformación: 1-y
 
-    # 5) Llamada al controlador externo
-    payload_ctrl = {"x": target_x, "y": target_y, "desti": {"x": target_x, "y": target_y}}
+    # 5) Llamada al controlador externo con el id en hexadecimal
+    payload_ctrl = {"id": (f"0x{car_id_hex[2:].upper()}"), "desti": {"x": target_x, "y": target_y}}
     try:
         async with httpx.AsyncClient() as client:
             controller_resp = await client.post(
@@ -621,14 +632,10 @@ async def create_basic_route(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al llamar al controlador: {e}")
 
-    # 6) Crear la reserva en MongoDB
-    # Buscar coche disponible y marcarlo "Solicitat"
-    car = await db_mongo["car"].find_one({"state": "Disponible"})
-    if not car:
-        raise HTTPException(status_code=400, detail="No hay coches disponibles.")
+    # 6) Marcar el coche como 'Solicitat' tras la llamada
     await db_mongo["car"].update_one({"_id": car["_id"]}, {"$set": {"state": "Solicitat"}})
-    car_id = car["_id"]
 
+    # 7) Crear la reserva en MongoDB
     new_route = {
         "user_id": user_id,  # Ahora usa la variable user_id
         "start_location": service_obj.name,
@@ -642,16 +649,16 @@ async def create_basic_route(
     if not inserted:
         raise HTTPException(status_code=500, detail="No se pudo crear la ruta en MongoDB.")
 
-    # 7) Actualizar historial del usuario
+    # 8) Actualizar historial del usuario
     await db_mongo["user"].update_one(
         {"id": user_id},  # Ahora usa la variable user_id
         {"$push": {"route_history": inserted}, "$setOnInsert": {"id": user_id}},  # Aquí también
         upsert=True
     )
 
-    # 8) Devolver los resultados
+    # 9) Devolver los resultados
     return {
-        "message": "Reserva creada y coche solicitado correctamente.",
+        "message": "Reserva creada i cotxe sol·licitat correctament.",
         "controller_status": controller_resp.status_code,
         "controller_data": ctrl_data,
         "reservation": serialize_mongo_doc(inserted),
@@ -697,8 +704,8 @@ async def inicia_trajecte(
         # Limpiar espacios en blanco
         end_location_clean = end_location.strip()
         
-        # Debug: mostrar qué estamos buscando
-        print(f"Buscando servicio: '{end_location_clean}'")
+        # Debug: mostrar què estem buscant
+        print(f"Buscant servei: '{end_location_clean}'")
         
         # Búsqueda exacta (SQLAlchemy ORM maneja automáticamente las comillas)
         service = db_sql.query(Service).filter(Service.name == end_location_clean).first()
@@ -744,7 +751,7 @@ async def inicia_trajecte(
         }
 
     except Exception as e:
-        # Temporalmente, para ver qué pasa
+        # Temporalment, per a veure què passa
         raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
 
 
