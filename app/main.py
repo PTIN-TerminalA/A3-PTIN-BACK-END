@@ -1107,16 +1107,6 @@ async def update_profile(
 # luego se hace la peticion a la API externa y se devuelve el resultado
 
 
-#Endpoint que modifica l'estat d'un cotxe a "Esperant" donat el seu ID.
-#Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
-#Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
-@app.put("/api/cotxe/{cotxe_id}/esperant")
-async def state_car_waiting(cotxe_id: str, db=Depends(get_mongo_db)):
-   
-    # Busquem el cotxe a la base de dades
-    car = await db["car"].find_one({"_id": cotxe_id})
-    if not car:
-        raise HTTPException(status_code=404, detail="Cotxe no trobat.")
 
 # Peticion para obtener la posicion del establecimiento pasado por parametro 
 # Uso: /api/establishment-position?name="nombredelestablecimiento"
@@ -1254,7 +1244,7 @@ async def get_all_services(db: Session = Depends(get_db)):
 #Ús: curl -X PUT http://localhost:8000/cotxe/{cotxe_id}/esperant
 #Post: L'estat del car amb _id = {cotxe_id} passa a ser "Esperant"
 @app.put("/api/cotxe/{cotxe_id}/esperant")
-async def state_car_available(cotxe_id: str, db=Depends(get_mongo_db)):
+async def state_car_waiting(cotxe_id: str, db=Depends(get_mongo_db)):
     
     query_id = cotxe_id
 
