@@ -2048,3 +2048,42 @@ async def list_cars(db = Depends(get_mongo_db)):
         })
 
     return resultat
+    
+@app.post("/api/chat-with-ia")
+async def chat_with_ia(
+    user_id: int = Form(...),
+    user_message: str = Form(...),
+    user_location_x: float = Form(...),
+    user_location_y: float = Form(...)
+):
+    """
+    Endpoint del nostre backend que fa de pont cap al servei d'IA.
+    Rep les dades de l'usuari i les envia al microservei IA.
+    """
+    ia_url = "http://10.60.0.3:3333/ask_agent/"
+
+    payload = {
+        "user_id": user_id,
+        "user_message": user_message,
+        "user_location_x": user_location_x,
+        "user_location_y": user_location_y
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                ia_url,
+                json=payload,
+                timeout=httpx.Timeout(300.0)
+            )
+            response.raise_for_status()
+            ia_reply = response.text.strip()
+            if not ia_reply:
+                raise HTTPException(status_code=500, detail="Resposta buida de la IA")
+            return {"response": ia_reply}
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Error connectant amb la IA: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+
