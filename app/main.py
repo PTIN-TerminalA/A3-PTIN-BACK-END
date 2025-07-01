@@ -736,9 +736,15 @@ async def inicia_trajecte(
             )
             put_response.raise_for_status()
 
+            payload_ctrl = {
+                "id": str(car_id),  # Usar car_id directamente como string
+                "desti": {"x": x, "y": y}
+            }
+
             controller_response = await client.post(
                 "http://192.168.10.11:8767/controller/demana-cotxe",
-                json={"x": x, "y": y, "desti": {"x": x, "y": y}},
+                json=payload_ctrl,
+                # json={"x": x, "y": y, "desti": {"x": x, "y": y}},
                 timeout=5.0
             )
             controller_response.raise_for_status()
