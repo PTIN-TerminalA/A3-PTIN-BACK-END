@@ -558,13 +558,14 @@ async def list_reserves(
 
 @app.post("/api/reserves/app-basic")
 async def create_basic_route(
+    user_id: int,
     payload: dict = Body(...),
-    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_sql: Session = Depends(get_db),
     db_mongo=Depends(get_mongo_db)
 ):
     """
     Endpoint que recibe:
+    - user_id: int (ID del usuario)
     - location: { x: float, y: float }
     - end_location: string (nombre del servicio)
 
@@ -573,13 +574,6 @@ async def create_basic_route(
     3) Crea la reserva en MongoDB con user_id.
     4) Devuelve estado del controlador y datos de la reserva.
     """
-    
-    # # Autenticación por token (comentado por ahora)
-    # payload_token = decode_access_token(creds.credentials)
-    # user_id = int(payload_token.get("sub"))
-    
-    # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
-    user_id = 44
     
     # 1) Validar y extraer ubicación del usuario
     loc = payload.get("location")
@@ -678,18 +672,11 @@ async def create_basic_route(
 
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
-    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    user_id: int,
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
     try:
-        # # Autenticación por token (comentado por ahora)
-        # payload_token = decode_access_token(creds.credentials)
-        # user_id = int(payload_token.get("sub"))
-        
-        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
-        user_id = 44
-
         last_route = await db_mongo["route"].find_one(
             {"user_id": user_id},
             sort=[("scheduled_time", -1)]
@@ -769,7 +756,7 @@ async def inicia_trajecte(
 
 @app.post("/api/finalitza-trajecte")
 async def finalitza_trajecte(
-    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    user_id: int,
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
@@ -780,13 +767,6 @@ async def finalitza_trajecte(
     3) Canvia l'estat de la ruta a "Finalitzada"
     """
     try:
-        # # Autenticación por token (comentado por ahora)
-        # payload_token = decode_access_token(creds.credentials)
-        # user_id = int(payload_token.get("sub"))
-        
-        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
-        user_id = 44
-
         # 1) Buscar la ruta más reciente del usuario que esté "En curs"
         last_route = await db_mongo["route"].find_one(
             {"user_id": user_id, "state": "En curs"},
