@@ -230,7 +230,7 @@ async def update_dni(request: UpdateDniRequest, db: Session = Depends(get_db)):
 
     return {"message": "DNI actualitzat correctament"}
 
-
+#para seguridad
 @app.get("/api/get-user-type")
 async def get_user_type(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
