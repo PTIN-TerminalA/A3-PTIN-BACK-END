@@ -2095,7 +2095,7 @@ async def chat_agent_proxy(request: Request):
         response = requests.post(
             "http://10.60.0.3:3333/ask_agent/",
             json=data,
-            timeout=5
+            timeout=320
         )
         return {"response": response.text}
     except requests.RequestException as e:
