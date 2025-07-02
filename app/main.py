@@ -2097,6 +2097,6 @@ async def chat_agent_proxy(request: Request):
             json=data,
             timeout=320
         )
-        return {"response": response.text}
+        return response.text
     except requests.RequestException as e:
         return {"error": "Error al contactar amb el agent extern."}
