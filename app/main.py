@@ -232,24 +232,27 @@ async def update_dni(request: UpdateDniRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/api/get-user-type")
-async def get_user_type(token: str, db: Session = Depends(get_db)):
+async def get_user_type(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    token = credentials.credentials  # Aquí ya tienes el token limpio, sin "Bearer "
     decoded = decode_access_token(token)
     user_id = decoded["sub"]
 
     regular = db.query(Regular).filter(Regular.id == user_id).first()
     admin = db.query(Admin).filter(Admin.id == user_id).first()
-    
 
     if admin: 
         superadmin = db.query(Admin).filter(Admin.id == user_id, Admin.superadmin == True).first()
         if superadmin:
-            return {"user_type": str("superadmin")}
+            return {"user_type": "superadmin"}
         else:
-            return {"user_type": str("admin")}
+            return {"user_type": "admin"}
     elif regular:   
-        return {"user_type": str("regular")}
+        return {"user_type": "regular"}
     else:
-        return {"user_type": str("non-assigned")}
+        return {"user_type": "non-assigned"}
 
 
 #Aquest endpoint esborra l'admin amb id = admin_id
