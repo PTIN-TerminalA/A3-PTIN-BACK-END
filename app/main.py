@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from argon2 import PasswordHasher
@@ -43,7 +43,9 @@ from app.services.token import create_access_token, decode_access_token
 from app.models.service import Service, Price, Schedule, Valoration, Tag, ServiceTag
 from app.schemas.service import ServiceSchema, PriceSchema, ScheduleSchema, ServiceTagSchema
 from app.schemas.location import LocationSchema, WifiMeasuresList
-
+from app.models.flight import Flight
+from app.models.ticket import Ticket
+from app.models.airline import Airline
 
 # --- Mongo imports ---
 from app.mongodb import get_db as get_mongo_db
@@ -2114,3 +2116,52 @@ async def chat_agent_proxy(request: Request):
         return response.text
     except requests.RequestException as e:
         return {"error": "Error al contactar amb el agent extern."}
+
+
+@app.get("/api/user-flights")
+async def get_user_flights(
+    creds: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
+):
+    # 1. Obtener user_id desde el token
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
+
+    # 2. Consulta de tickets + vuelos + aerolínea
+    results = (
+        db.query(Ticket, Flight, Airline)
+        .join(Flight, Ticket.flight_id == Flight.id)
+        .join(Airline, Flight.airline_id == Airline.id)
+        .filter(Ticket.user_id == user_id)
+        .all()
+    )
+
+    # 3. Formatear resultados
+    response = []
+    for ticket, flight, airline in results:
+        response.append({
+            "id": str(flight.id),
+            "airline": airline.name,
+            "airlineImage": {"uri": f"https://flysy.software/images/airlines/{airline.image}"},
+            "flightNumber": flight.flight_number,
+            "route": {
+                "origin": flight.origin_code,
+                "originName": flight.origin_name,
+                "destination": flight.destination_code,
+                "destinationName": f"airportNames.{flight.destination_code}",
+                "departureTime": f"{flight.date}T{flight.departure_time}",
+                "arrivalTime": f"{flight.date}T{flight.arrival_time}",
+                "terminal": "2",  # hardcoded por ahora
+                "gate": "A5"
+            },
+            "passenger": {
+                "name": f"passengerNames[1]",  # nombre real no está en tabla ticket
+                "seat": ticket.seat,
+                "ticketNumber": ticket.number
+            },
+            "boardingTime": f"{flight.date}T{flight.boarding_time}",
+            "baggageAllowance": "1 × 10kg",
+            "qrCode": ticket.qr_code_link
+        })
+
+    return response
