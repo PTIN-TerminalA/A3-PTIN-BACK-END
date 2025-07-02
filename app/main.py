@@ -33,12 +33,17 @@ from app.models.service import Service, Price, Schedule, Valoration, Tag, Servic
 from app.schemas.service import ServiceSchema, PriceSchema, ScheduleSchema, ServiceTagSchema
 from app.schemas.location import LocationSchema, WifiMeasuresList
 
+# Importar modelos de vuelos y tickets
+from app.models.ticket import Ticket
+from app.models.flight import Flight
+from app.models.airline import Airline
+
 
 # --- Mongo imports ---
 from app.mongodb import get_db as get_mongo_db
 from app.reserves.router import Route
 
-app = FastAPI()
+app = FastAPI(debug=True)
 
 #from app.vehicles import router as vehicle_router
 #app.include_router(vehicle_router)
@@ -1148,148 +1153,52 @@ async def get_car_status(
     }
 
 
-# app/main.py
+# ------------------------- Endpoints Vuelos -----------------------------------
 
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
-from typing import List
-from jose import jwt, JWTError
-from sqlalchemy.orm import Session
-
-# --- IMPORTS DELS TEUS MODELS (segons on els tinguis definits) ---
-from app.models.flight    import Flight
-from app.models.airline   import Airline
-from app.models.ticket    import Ticket
-from app.database         import get_db
-
-
-
-# --- AUTENTICACIÓ BÀSICA JWT per generar el current_user ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-SECRET_KEY = "la_teva_clau_secreta"
-ALGORITHM  = "HS256"
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(401, "Token invàlid")
-        return {"id": int(user_id)}
-    except JWTError:
-        raise HTTPException(401, "Token invàlid")
-
-# --- SCHEMAS Pydantic ---
-class AirlineImage(BaseModel):
-    uri: str
-
-class RouteInfo(BaseModel):
-    origin: str
-    originName: str
-    destination: str
-    destinationName: str
-    departureTime: str
-    arrivalTime: str
-
-class PassengerInfo(BaseModel):
-    seat: str
-    ticketNumber: str
-
-class FlightResponse(BaseModel):
-    id: str
-    airline: str
-    airlineImage: AirlineImage
-    flightNumber: str
-    route: RouteInfo
-    passenger: PassengerInfo
-    boardingTime: str
-    qrCode: str
-
-class CreateFlightRequest(BaseModel):
-    flight_id: int
-    seat: str
-    ticket_number: str
-    qr_code_link: str
-
-# --- ENDPOINT C (Create) ---
-@app.post("/api/flights", status_code=201)
-def create_flight(
-    req: CreateFlightRequest,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+@app.get("/api/user-flights")
+async def get_user_flights(
+    creds: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: Session = Depends(get_db)
 ):
-    # 1) Comprova que el vol existeix
-    flight = db.query(Flight).filter(Flight.id == req.flight_id).first()
-    if not flight:
-        raise HTTPException(404, "Vol no trobat.")
+    # 1. Obtener user_id desde el token
+    payload = decode_access_token(creds.credentials)
+    user_id = int(payload.get("sub"))
 
-    # 2) Crea el ticket
-    ticket = Ticket(
-        flight_id    = req.flight_id,
-        user_id      = current_user["id"],
-        seat         = req.seat,
-        number       = req.ticket_number,
-        qr_code_link = req.qr_code_link
-    )
-    db.add(ticket)
-    db.commit()
-    return {"message": "Vol afegit correctament al teu compte"}
-
-# --- ENDPOINT R (Read) ---
-@app.get("/api/flights", response_model=List[FlightResponse])
-def get_flights(
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    rows = (
-        db.query(Flight, Airline, Ticket)
-          .join(Ticket,  Ticket.flight_id  == Flight.id)
-          .join(Airline, Airline.id         == Flight.airline_id)
-          .filter(Ticket.user_id == current_user["id"])
-          .all()
+    # 2. Consulta de tickets + vuelos + aerolínea
+    results = (
+        db.query(Ticket, Flight, Airline)
+        .join(Flight, Ticket.flight_id == Flight.id)
+        .join(Airline, Flight.airline_id == Airline.id)
+        .filter(Ticket.user_id == user_id)
+        .all()
     )
 
-    out = []
-    for flight, airline, ticket in rows:
-        out.append(FlightResponse(
-            id            = str(flight.id),
-            airline       = airline.name,
-            airlineImage  = AirlineImage(uri=f"https://ruta-teva.com/{airline.image}"),
-            flightNumber  = flight.flight_number,
-            route         = RouteInfo(
-                origin           = flight.origin_code,
-                originName       = flight.origin_name,
-                destination      = flight.destination_code,
-                destinationName  = flight.destination_name,
-                departureTime    = f"{flight.date}T{flight.departure_time}",
-                arrivalTime      = f"{flight.date}T{flight.arrival_time}"
-            ),
-            passenger     = PassengerInfo(
-                seat         = ticket.seat,
-                ticketNumber = ticket.number
-            ),
-            boardingTime  = f"{flight.date}T{flight.boarding_time}",
-            qrCode        = ticket.qr_code_link
-        ))
+    # 3. Formatear resultados
+    response = []
+    for ticket, flight, airline in results:
+        response.append({
+            "id": str(flight.id),
+            "airline": airline.name,
+            "airlineImage": {"uri": f"https://flysy.software/images/airlines/{airline.image}"},
+            "flightNumber": flight.flight_number,
+            "route": {
+                "origin": flight.origin_code,
+                "originName": flight.origin_name,
+                "destination": flight.destination_code,
+                "destinationName": f"airportNames.{flight.destination_code}",
+                "departureTime": f"{flight.date}T{flight.departure_time}",
+                "arrivalTime": f"{flight.date}T{flight.arrival_time}",
+                "terminal": "2",  # hardcoded por ahora
+                "gate": "A5"
+            },
+            "passenger": {
+                "name": f"passengerNames[1]",  # nombre real no está en tabla ticket
+                "seat": ticket.seat,
+                "ticketNumber": ticket.number
+            },
+            "boardingTime": f"{flight.date}T{flight.boarding_time}",
+            "baggageAllowance": "1 × 10kg",
+            "qrCode": ticket.qr_code_link
+        })
 
-    return out
-
-# --- ENDPOINT D (Delete) ---
-@app.delete("/api/flights/{flight_id}")
-def delete_flight(
-    flight_id: int,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
-):
-    ticket = (
-        db.query(Ticket)
-          .filter(Ticket.flight_id == flight_id,
-                  Ticket.user_id   == current_user["id"])
-          .first()
-    )
-    if not ticket:
-        raise HTTPException(404, "No tens aquest vol reservat")
-    db.delete(ticket)
-    db.commit()
-    return {"message": "Vol eliminat correctament"}
+    return response
