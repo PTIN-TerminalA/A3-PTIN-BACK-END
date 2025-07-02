@@ -407,7 +407,7 @@ async def getNearestService(userLocation: LocationSchema, db: Session = Depends(
 
     # Preparar el diccionario de serveis per la petició a l'API de routing
     service_dict = {
-        s.id: (float(s.location_x), float(-s.location_y))
+        s.id: (float(s.location_x), float(s.location_y))
         for s in services
     }
 
