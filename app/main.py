@@ -667,24 +667,16 @@ async def create_basic_route(
     }
 
 
-
-
-
-
-
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
-    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
     try:
-        # # Autenticación por token (comentado por ahora)
-        # payload_token = decode_access_token(creds.credentials)
-        # user_id = int(payload_token.get("sub"))
-        
-        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
-        user_id = 44
+        # Autenticación por token (comentado por ahora)
+        payload_token = decode_access_token(creds.credentials)
+        user_id = int(payload_token.get("sub"))
 
         last_route = await db_mongo["route"].find_one(
             {"user_id": user_id},
@@ -761,11 +753,9 @@ async def inicia_trajecte(
         raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
 
 
-
-
 @app.post("/api/finalitza-trajecte")
 async def finalitza_trajecte(
-    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
@@ -776,12 +766,9 @@ async def finalitza_trajecte(
     3) Canvia l'estat de la ruta a "Finalitzada"
     """
     try:
-        # # Autenticación por token (comentado por ahora)
-        # payload_token = decode_access_token(creds.credentials)
-        # user_id = int(payload_token.get("sub"))
-        
-        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
-        user_id = 44
+        # Autenticación por token (comentado por ahora)
+        payload_token = decode_access_token(creds.credentials)
+        user_id = int(payload_token.get("sub"))
 
         # 1) Buscar la ruta más reciente del usuario que esté "En curs"
         last_route = await db_mongo["route"].find_one(
@@ -833,8 +820,6 @@ async def finalitza_trajecte(
     except Exception as e:
         # Handle unexpected errors
         raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
-
-
 
 
 # --- POST /reserves/usuari (reservacotxe) ---
