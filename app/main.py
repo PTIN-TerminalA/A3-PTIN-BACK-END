@@ -2077,3 +2077,24 @@ async def chat_with_ia(
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
 
+
+#-------------------------Endpoints localizacion e IA-----------------------------------
+from fastapi import APIRouter, Request
+import requests
+
+router = APIRouter()
+
+@router.post("/chat_agent")
+async def chat_agent_proxy(request: Request):
+    data = await request.json()
+
+    # Aquí haces la llamada a la API externa
+    try:
+        response = requests.post(
+            "http://10.60.0.3:3333/ask_agent/",
+            json=data,
+            timeout=5
+        )
+        return {"response": response.text}
+    except requests.RequestException as e:
+        return {"error": "Error al contactar amb el agent extern."}
