@@ -2084,7 +2084,7 @@ import requests
 
 router = APIRouter()
 
-@router.post("/chat_agent")
+@router.post("/api/chat_agent")
 async def chat_agent_proxy(request: Request):
     data = await request.json()
 
