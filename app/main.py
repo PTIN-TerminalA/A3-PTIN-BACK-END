@@ -1,3 +1,8 @@
+from fastapi import APIRouter, Request
+import requests
+
+router = APIRouter()
+
 # app/main.py
 from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form
 from fastapi.middleware.cors import CORSMiddleware
