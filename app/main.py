@@ -2079,12 +2079,9 @@ async def chat_with_ia(
 
 
 #-------------------------Endpoints localizacion e IA-----------------------------------
-from fastapi import APIRouter, Request
-import requests
 
-router = APIRouter()
 
-@router.post("/api/chat_agent")
+@app.post("/api/chat_agent")
 async def chat_agent_proxy(request: Request):
     data = await request.json()
 
