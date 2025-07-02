@@ -2019,7 +2019,10 @@ async def update_user_full(
     }
 
 @app.get("/api/cars", response_model=List[Dict[str, Any]])
-async def list_cars(db = Depends(get_mongo_db)):
+async def list_cars(
+    admin = Depends(verify_admin_access),   # ← Sólo admins pueden llegar aquí
+    db=Depends(get_mongo_db)
+):
     """
     Retorna tots els documents de la col·lecció `car`,
     amb els camps:
@@ -2027,6 +2030,7 @@ async def list_cars(db = Depends(get_mongo_db)):
       - state
       - battery_level  (el camp a Mongo és `battery`)
     """
+
     # Fem la consulta a Mongo
     cursor = db["car"].find({})
     carros = await cursor.to_list(length=None)
