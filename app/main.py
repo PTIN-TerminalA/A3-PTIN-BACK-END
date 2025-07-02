@@ -4,7 +4,7 @@ import requests
 router = APIRouter()
 
 # app/main.py
-from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form
+from fastapi import FastAPI, HTTPException, Depends, Query, Body, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import requests
@@ -667,16 +667,24 @@ async def create_basic_route(
     }
 
 
+
+
+
+
+
 @app.post("/api/inicia-trajecte")
 async def inicia_trajecte(
-    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
     try:
-        # Autenticación por token (comentado por ahora)
-        payload_token = decode_access_token(creds.credentials)
-        user_id = int(payload_token.get("sub"))
+        # # Autenticación por token (comentado por ahora)
+        # payload_token = decode_access_token(creds.credentials)
+        # user_id = int(payload_token.get("sub"))
+        
+        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
+        user_id = 44
 
         last_route = await db_mongo["route"].find_one(
             {"user_id": user_id},
@@ -753,9 +761,11 @@ async def inicia_trajecte(
         raise HTTPException(status_code=500, detail=f"Error intern: {str(e)}")
 
 
+
+
 @app.post("/api/finalitza-trajecte")
 async def finalitza_trajecte(
-    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
+    # creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),  # Descomenta cuando quieras usar autenticación
     db_mongo=Depends(get_mongo_db),
     db_sql: Session = Depends(get_db)
 ):
@@ -766,9 +776,12 @@ async def finalitza_trajecte(
     3) Canvia l'estat de la ruta a "Finalitzada"
     """
     try:
-        # Autenticación por token (comentado por ahora)
-        payload_token = decode_access_token(creds.credentials)
-        user_id = int(payload_token.get("sub"))
+        # # Autenticación por token (comentado por ahora)
+        # payload_token = decode_access_token(creds.credentials)
+        # user_id = int(payload_token.get("sub"))
+        
+        # Usuario hardcodeado (eliminar cuando se descomente la autenticación)
+        user_id = 44
 
         # 1) Buscar la ruta más reciente del usuario que esté "En curs"
         last_route = await db_mongo["route"].find_one(
@@ -1852,52 +1865,69 @@ async def delete_user_full(user_id: int, db: Session = Depends(get_db)):
     # 4) Commit unificat
     db.commit()
 
+async def verify_admin_access(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Token de autorización requerido")
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Formato de token inválido")
+    
+    token = authorization.split(" ")[1]
+    
+    try:
+        decoded = decode_access_token(token)
+        user_id = decoded["sub"]
+        
+        admin = db.query(Admin).filter(Admin.id == user_id).first()
+        if not admin:
+            raise HTTPException(status_code=403, detail="Acceso denegado: se requieren permisos de administrador")
+        
+        return admin  # Retornamos el objeto admin por si lo necesitas
+        
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
 @app.get("/api/users")
 async def list_users(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    admin: Admin = Depends(verify_admin_access),  # Esto verifica automáticamente los permisos
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    # Comptar només usuaris tipus 1
     total = db.query(User).filter(User.usertype == 1).count()
-
-    # Consultar paginat
+    
     users_q = (
         db.query(User)
-          .filter(User.usertype == 1)
-          .offset(offset)
-          .limit(limit)
-          .all()
+        .filter(User.usertype == 1)
+        .offset(offset)
+        .limit(limit)
+        .all()
     )
-
+    
     result = []
     for u in users_q:
         reg = db.query(Regular).filter(Regular.id == u.id).first()
-
-        # Si encara vols provar de desencriptar, fes-ho amb fallback:
-        # try:
-        #     plain_dni = decrypt_dni(u.dni)
-        # except Exception:
-        #     plain_dni = u.dni
-        # Però si no el desencriptes, simplement:
         plain_dni = u.dni
-
+        
         result.append({
-            "id":         u.id,
-            "name":       u.name,
-            "dni":        plain_dni,
-            "email":      u.email,
+            "id": u.id,
+            "name": u.name,
+            "dni": plain_dni,
+            "email": u.email,
             "birth_date": reg.birth_date.isoformat() if (reg and reg.birth_date) else None,
-            "phone_num":  reg.phone_num  if reg else None,
-            "identity":   reg.identity   if reg else None,
-            "gender":     reg.identity   if reg else None,
+            "phone_num": reg.phone_num if reg else None,
+            "identity": reg.identity if reg else None,
+            "gender": reg.identity if reg else None,
         })
-
+    
     return {
-        "total":  total,
-        "limit":  limit,
+        "total": total,
+        "limit": limit,
         "offset": offset,
-        "users":  result
+        "users": result
     }
 
 @app.get("/api/users/{user_id}")
