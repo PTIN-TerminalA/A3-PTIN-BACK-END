@@ -1822,27 +1822,36 @@ async def reset_password(
     new_password: str = Form(...),
     db: Session = Depends(get_db)
 ):
+    if not token:
+        raise HTTPException(status_code=400, detail="ERROR: token faltant")
+    if not new_password:
+        raise HTTPException(status_code=400, detail="ERROR: nova contrasenya faltant")
+
     token_info = recovery_tokens.get(token)
     if not token_info:
-        raise HTTPException(400, detail="Token invàlid")
+        raise HTTPException(status_code=400, detail="ERROR: token invàlid o no trobat")
 
     if token_info["expires"] < datetime.utcnow():
         del recovery_tokens[token]
-        raise HTTPException(400, detail="Token caducat")
+        raise HTTPException(status_code=400, detail="ERROR: token caducat")
 
-    user = db.query(User).filter(User.email == token_info["email"]).first()
+    user = db.query(User).filter(User.email == token_info.get("email")).first()
     if not user:
-        raise HTTPException(404, detail="Usuari no trobat")
+        raise HTTPException(status_code=404, detail="ERROR: usuari no trobat per email")
 
     common_passwords = load_common_passwords()
     if new_password in common_passwords:
-        raise HTTPException(400, detail="Contrasenya massa comuna")
+        raise HTTPException(status_code=400, detail="ERROR: contrasenya massa comuna")
 
-    user.password = hasher.hash(new_password)
-    db.commit()
-    del recovery_tokens[token]
+    try:
+        user.password = hasher.hash(new_password)
+        db.commit()
+        del recovery_tokens[token]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ERROR: problema al guardar la nova contrasenya ({str(e)})")
 
     return {"message": "Contrasenya canviada correctament"}
+
             
             
 #-------------------------Endpoints localizacion e IA-----------------------------------
